@@ -1,0 +1,9 @@
+.streamlit/secrets.toml
+audit.log.jsonl
+audit.archive.jsonl
+__pycache__/
+
+# Local runtime artifacts
+triage.db
+.pytest_cache/
+.venv/

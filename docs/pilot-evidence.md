@@ -1,0 +1,58 @@
+# Pilot Evidence Pack
+
+## Validation Output
+
+Command:
+
+```bash
+./run_validation.sh
+```
+
+Observed output:
+
+```text
+Running smoke validation...
+PASS: smoke validation checks completed
+Running pytest suite...
+...................                                                      [100%]
+19 passed in 0.16s
+```
+
+## Acceptance Checklist (Pass/Fail)
+
+| Check | Status | Evidence |
+|---|---|---|
+| One-command local startup | PASS | `/Users/armankhan/Documents/malomatia-competition-package/run_prototype.sh` |
+| Auth gate active | PASS | Login UI gate before dashboard render |
+| Session/action safety guard | PASS | `require_active_action(...)` guard usage in `/Users/armankhan/Documents/malomatia-competition-package/gov_triage_dashboard.py` |
+| Workflow/RBAC enforcement | PASS | `/Users/armankhan/Documents/malomatia-competition-package/tests/test_workflow.py` |
+| DB contention handled (controlled error) | PASS | lock test in `/Users/armankhan/Documents/malomatia-competition-package/validation_smoke.py` and `/Users/armankhan/Documents/malomatia-competition-package/tests/test_storage.py` |
+| Schema migration idempotent and v4-safe | PASS | `/Users/armankhan/Documents/malomatia-competition-package/tests/test_migrations.py` |
+| Arabic default + clean single-language toggle | PASS | `ui_language_mode` default and toggle contract checks |
+| Distinct nav pages (incl. Help/Notifications) | PASS | UI contract + rendered nav branches |
+| Search/filter/pagination contracts present | PASS | smoke/UI contract checks + runtime controls |
+| Saved views + notifications storage contract | PASS | storage tests for create/list/delete/ack |
+| Session 3 RAG retrieval pipeline active | PASS | `rag_engine.py` + `tests/test_rag_engine.py` + Assistant nav |
+| Streamlit cloud packaging ready | PASS | `/Users/armankhan/Documents/malomatia-competition-package/requirements.txt` + `/Users/armankhan/Documents/malomatia-competition-package/DEPLOYMENT.md` + CI smoke workflow |
+
+## Screenshot Contract
+
+Store screenshots under:
+
+- `/Users/armankhan/Documents/malomatia-competition-package/docs/screenshots/`
+
+Required filenames:
+
+1. `dashboard-overview.png`
+2. `incoming-requests.png`
+3. `queues-view.png`
+4. `review-page.png`
+5. `settings-security.png`
+6. `help-page.png`
+7. `notifications-center.png`
+8. `knowledge-assistant.png`
+
+## Notes
+
+- Scope is local and Streamlit Community demo readiness.
+- Production controls (enterprise SSO/KMS/SIEM) remain out of this milestone.

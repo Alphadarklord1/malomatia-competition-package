@@ -1,0 +1,90 @@
+[
+  {
+    "id": "DOC-IMM-01",
+    "title_ar": "سياسة تجديد الإقامة العاجلة",
+    "title_en": "Urgent Residency Renewal Policy",
+    "department": "Immigration",
+    "policy_rule": "PR-17",
+    "keywords_ar": ["إقامة", "تنتهي", "غداً", "عاجل", "تجديد"],
+    "keywords_en": ["residency", "expires", "tomorrow", "urgent", "renewal"],
+    "text_ar": "عند وجود إشارة زمنية قريبة مثل غداً أو خلال 24 ساعة في طلبات تجديد الإقامة، يتم تصنيف الأولوية كعاجل. يجب توجيه الحالة إلى إدارة الهجرة مع إظهار سبب القرار: اكتشاف موعد نهائي قريب. إذا كانت الثقة أقل من 0.75 أو توجد بيانات ناقصة، تحول الحالة إلى مراجعة بشرية قبل الاعتماد النهائي.",
+    "text_en": "When a residency renewal request includes an immediate time signal such as tomorrow or within 24 hours, urgency is classified as Urgent. The case must route to Immigration with an explanation stating that a near deadline was detected. If confidence is below 0.75 or key data is missing, route to Human Review before final approval."
+  },
+  {
+    "id": "DOC-MUN-01",
+    "title_ar": "سياسة شكاوى الخدمات البلدية",
+    "title_en": "Municipal Service Complaint Policy",
+    "department": "Municipal",
+    "policy_rule": "PR-22",
+    "keywords_ar": ["نفايات", "تأخير", "شكوى", "حي", "بلدية"],
+    "keywords_en": ["waste", "delay", "complaint", "area", "municipal"],
+    "text_ar": "طلبات الشكاوى المتعلقة بتأخر جمع النفايات أو النظافة العامة توجه إلى البلدية. تعتبر الأولوية تحذير إذا وردت كلمات تدل على تكرار المشكلة خلال أسبوع. يتم إبقاء الحالة في الطابور حتى يتم إسنادها لفريق ميداني. في حال تكرار التجاوز اليدوي لنفس الحالة مرتين، يتم تصعيدها للمراجعة الإشرافية.",
+    "text_en": "Complaints about delayed waste collection or public cleanliness are routed to Municipal services. Urgency is set to Warning when wording indicates repeated issues during the same week. Cases remain In Queue until assigned to a field team. If the same case is overridden twice, escalate it for supervisor review."
+  },
+  {
+    "id": "DOC-LIC-01",
+    "title_ar": "سياسة نقل ملكية المركبات",
+    "title_en": "Vehicle Ownership Transfer Policy",
+    "department": "Licensing",
+    "policy_rule": "PR-31",
+    "keywords_ar": ["نقل", "ملكية", "مركبة", "هذا الأسبوع", "ترخيص"],
+    "keywords_en": ["transfer", "ownership", "vehicle", "this week", "licensing"],
+    "text_ar": "طلبات نقل ملكية المركبات تصنف تحت إدارة الترخيص. إذا تضمنت الإشارة الزمنية هذا الأسبوع أو قبل موعد الفحص، تعطى أولوية تحذير. في حال توفر مستندات كاملة يمكن اعتماد التوجيه مباشرة، وإلا يتم طلب استكمال البيانات عبر حالة انتظار المواطن.",
+    "text_en": "Vehicle ownership transfer requests are categorized under Licensing. If the request includes time signals such as this week or before inspection date, set urgency to Warning. When documentation is complete, direct routing can be approved; otherwise move the case to WAITING_CITIZEN for missing information."
+  },
+  {
+    "id": "DOC-LIC-02",
+    "title_ar": "سياسة إصدار الرخص التجارية",
+    "title_en": "Commercial License Issuance Policy",
+    "department": "Licensing",
+    "policy_rule": "PR-35",
+    "keywords_ar": ["رخصة", "تجارية", "منطقة صناعية", "إصدار"],
+    "keywords_en": ["license", "commercial", "industrial area", "issuance"],
+    "text_ar": "طلبات إصدار رخصة تجارية جديدة تصنف كنوايا ترخيص. الأولوية الافتراضية تحذير ما لم يظهر موعد نهائي فوري. يجب التحقق من توافق النشاط التجاري مع الاشتراطات قبل الانتقال إلى حالة قيد التنفيذ. الحالات منخفضة الثقة تتطلب تأكيد مشرف.",
+    "text_en": "New commercial license issuance requests map to Licensing intents. Default urgency is Warning unless an immediate deadline is detected. Activity compliance checks are required before moving to IN_PROGRESS. Low-confidence decisions require supervisor confirmation."
+  },
+  {
+    "id": "DOC-GOV-01",
+    "title_ar": "إطار التصعيد البشري",
+    "title_en": "Human-in-the-Loop Escalation Framework",
+    "department": "Human Review",
+    "policy_rule": "PR-HITL-01",
+    "keywords_ar": ["مراجعة بشرية", "ثقة", "تجاوز", "استثناء", "تصعيد"],
+    "keywords_en": ["human review", "confidence", "override", "exception", "escalation"],
+    "text_ar": "يتم تحويل الحالة إلى المراجعة البشرية عند انخفاض الثقة أقل من 0.75 أو تعارض قواعد السياسة. المشرف فقط يمكنه اعتماد تجاوز التوجيه أو إرجاع الحالة للمشغل. أي إظهار لنص أصلي يحتوي بيانات حساسة يتطلب سبباً إلزامياً ويسجل في التدقيق.",
+    "text_en": "A case must transfer to Human Review when confidence drops below 0.75 or policy rules conflict. Only supervisors can approve routing overrides or return cases to operators. Any reveal of original sensitive text requires a mandatory reason and must be audit-logged."
+  },
+  {
+    "id": "DOC-SLA-01",
+    "title_ar": "سياسة اتفاقيات مستوى الخدمة",
+    "title_en": "Service-Level Agreement Policy",
+    "department": "Operations",
+    "policy_rule": "PR-SLA-04",
+    "keywords_ar": ["SLA", "عاجل", "تحذير", "متجاوز", "مهلة"],
+    "keywords_en": ["SLA", "urgent", "warning", "breached", "deadline"],
+    "text_ar": "المهلة القياسية للحالات العاجلة هي 4 ساعات، ولحالات التحذير 24 ساعة. تصنف الحالة ON_TRACK إذا كان الوقت المتبقي أكثر من 60 دقيقة، وAT_RISK إذا كان 60 دقيقة أو أقل، وBREACHED عند تجاوز المهلة. يجب إظهار حالة SLA في البطاقة وجدول الطوابير.",
+    "text_en": "Standard SLA target is 4 hours for Urgent cases and 24 hours for Warning cases. A case is ON_TRACK when more than 60 minutes remain, AT_RISK at 60 minutes or less, and BREACHED once deadline passes. SLA status must be visible on triage cards and queue tables."
+  },
+  {
+    "id": "DOC-PRIV-01",
+    "title_ar": "سياسة الخصوصية وإخفاء البيانات",
+    "title_en": "Privacy and Data-Masking Policy",
+    "department": "Operations",
+    "policy_rule": "PR-PRIV-09",
+    "keywords_ar": ["خصوصية", "إخفاء", "هاتف", "بريد", "رقم"],
+    "keywords_en": ["privacy", "masking", "phone", "email", "identifier"],
+    "text_ar": "يجب إخفاء البريد الإلكتروني وأرقام الهواتف والمعرفات الشخصية في العرض الافتراضي. لا يسمح بإظهار النص الأصلي إلا للمشرف وبسبب موثق. سجلات التدقيق لا يجب أن تخزن البيانات الحساسة الخام، بل تحفظ نوع الإجراء وسببه والطابع الزمني.",
+    "text_en": "Email addresses, phone numbers, and personal identifiers must be masked in default views. Original text can be revealed only by supervisors with a documented reason. Audit logs must avoid storing raw sensitive values and should keep action type, reason, and timestamp only."
+  },
+  {
+    "id": "DOC-AUD-01",
+    "title_ar": "سياسة سجل التدقيق وسلامة السجل",
+    "title_en": "Audit Logging and Integrity Policy",
+    "department": "Operations",
+    "policy_rule": "PR-AUD-03",
+    "keywords_ar": ["تدقيق", "سجل", "هاش", "سلامة", "تصدير"],
+    "keywords_en": ["audit", "log", "hash", "integrity", "export"],
+    "text_ar": "كل إجراء حساس مثل اعتماد أو تجاوز أو تغيير إعدادات يجب أن يسجل كحدث مستقل. يستخدم السجل سلسلة prev_hash وevent_hash لضمان سلامة التسلسل. يسمح بالتصدير بصيغة JSONL للمشرف والمدقق فقط مع إبقاء النظام للقراءة فقط للمدقق.",
+    "text_en": "Every sensitive action such as approve, override, or settings change must be logged as an individual event. The log uses a prev_hash and event_hash chain to preserve integrity. JSONL export is allowed for supervisors and auditors only, while auditor role remains read-only for case mutations."
+  }
+]
