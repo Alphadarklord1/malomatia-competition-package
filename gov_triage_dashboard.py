@@ -111,6 +111,9 @@ def ensure_session_defaults() -> None:
         "rag_top_k": 5,
         "rag_department_hint": "AUTO",
         "rag_last_result": None,
+        "ai_runtime_api_key": "",
+        "ai_runtime_model": "gpt-4o-mini",
+        "ai_runtime_embedding_model": "text-embedding-3-small",
         "security_session_idle_minutes": 15,
         "security_session_max_hours": 8,
         "security_audit_retention_days": 90,
@@ -421,6 +424,7 @@ def clear_auth_state() -> None:
     st.session_state["revealed_case_ids"] = set()
     st.session_state["selected_case_id"] = None
     st.session_state["ui_loaded_default_view_for_user"] = ""
+    st.session_state["ai_runtime_api_key"] = ""
 
 
 def login_screen(auth_users: dict[str, dict[str, str]]) -> None:
@@ -1933,6 +1937,44 @@ elif selected_nav == "assistant":
             "Operations": bi("العمليات", "Operations", arabic_default),
         }
 
+        with st.expander(bi("إعدادات AI", "AI Runtime Settings", arabic_default), expanded=False):
+            runtime_api_key = st.text_input(
+                bi("OpenAI API Key (جلسة مؤقتة)", "OpenAI API Key (session only)", arabic_default),
+                value=str(st.session_state.get("ai_runtime_api_key", "")),
+                type="password",
+                key="ai_runtime_api_key_input",
+            ).strip()
+            st.session_state["ai_runtime_api_key"] = runtime_api_key
+            model_cols = st.columns(2)
+            st.session_state["ai_runtime_model"] = model_cols[0].text_input(
+                bi("نموذج الإجابة", "Answer model", arabic_default),
+                value=str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")),
+                key="ai_runtime_model_input",
+            ).strip() or "gpt-4o-mini"
+            st.session_state["ai_runtime_embedding_model"] = model_cols[1].text_input(
+                bi("نموذج التمثيل المتجهي", "Embedding model", arabic_default),
+                value=str(st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")),
+                key="ai_runtime_embedding_model_input",
+            ).strip() or "text-embedding-3-small"
+
+            secret_key_exists = bool(str(st.secrets.get("openai_api_key", "")).strip())
+            effective_key = runtime_api_key or str(st.secrets.get("openai_api_key", "")).strip()
+            st.caption(
+                bi(
+                    "وضع AI: مفعل" if effective_key else "وضع AI: غير مفعل (سيستخدم الاسترجاع المحلي فقط)",
+                    "AI mode: ON" if effective_key else "AI mode: OFF (local retrieval fallback only)",
+                    arabic_default,
+                )
+            )
+            if not runtime_api_key and secret_key_exists:
+                st.caption(
+                    bi(
+                        "يتم استخدام مفتاح OpenAI من أسرار التطبيق.",
+                        "Using OpenAI key from app secrets.",
+                        arabic_default,
+                    )
+                )
+
         q_cols = st.columns([4, 1.2, 1.6, 1.1])
         st.session_state["rag_query"] = q_cols[0].text_input(
             bi("اسأل سؤالاً تشغيلياً أو سياسياً", "Ask an operational or policy question", arabic_default),
@@ -1970,8 +2012,15 @@ elif selected_nav == "assistant":
                     department_hint = str(selected_case.get("department_en", "")) if selected_case else ""
                 if department_hint == "all":
                     department_hint = ""
-                openai_api_key = str(st.secrets.get("openai_api_key", "")).strip()
-                openai_model = str(st.secrets.get("openai_model", "gpt-4o-mini")).strip()
+                openai_api_key = str(st.session_state.get("ai_runtime_api_key", "")).strip() or str(
+                    st.secrets.get("openai_api_key", "")
+                ).strip()
+                openai_model = str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")).strip() or str(
+                    st.secrets.get("openai_model", "gpt-4o-mini")
+                ).strip()
+                openai_embedding_model = str(
+                    st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")
+                ).strip() or str(st.secrets.get("openai_embedding_model", "text-embedding-3-small")).strip()
                 try:
                     result = answer_question(
                         query=query_text,
@@ -1981,6 +2030,7 @@ elif selected_nav == "assistant":
                         department_hint=department_hint or None,
                         openai_api_key=openai_api_key or None,
                         openai_model=openai_model,
+                        openai_embedding_model=openai_embedding_model,
                     )
                     st.session_state["rag_last_result"] = result
                     query_hash = hashlib.sha256(query_text.encode("utf-8")).hexdigest()[:12]
@@ -1992,6 +2042,9 @@ elif selected_nav == "assistant":
                             "query_hash": query_hash,
                             "hits": len(result.get("hits", [])),
                             "used_llm": bool(result.get("used_llm")),
+                            "ai_mode": "openai" if openai_api_key else "local",
+                            "answer_model": openai_model if openai_api_key else "local_fallback",
+                            "embedding_model": openai_embedding_model if openai_api_key else "tfidf",
                             "department_hint": department_hint or "none",
                             "top_k": int(st.session_state.get("rag_top_k", 5)),
                         },

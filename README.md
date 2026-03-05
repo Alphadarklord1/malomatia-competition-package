@@ -59,6 +59,8 @@ Template:
   - grounded response with DOC/CHUNK citations
 - Optional LLM synthesis:
   - add `openai_api_key` to secrets for generated grounded answers
+  - optional `openai_model` and `openai_embedding_model`
+  - can also paste API key in Assistant page (`AI Runtime Settings`) for session-only testing
   - without key, assistant uses deterministic grounded fallback
 
 ## Search, Filters, and Pagination

@@ -83,6 +83,19 @@ def _dot(a: dict[str, float], b: dict[str, float]) -> float:
     return sum(weight * b.get(token, 0.0) for token, weight in a.items())
 
 
+def _vec_norm(values: list[float]) -> float:
+    return math.sqrt(sum(v * v for v in values))
+
+
+def _vec_cosine(a: list[float], b: list[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    denom = _vec_norm(a) * _vec_norm(b)
+    if denom <= 0:
+        return 0.0
+    return sum(x * y for x, y in zip(a, b)) / denom
+
+
 def _language_suffix(language: str) -> str:
     return "ar" if language == "ar" else "en"
 
@@ -150,6 +163,50 @@ def build_index(data_path_str: str, language: str = "ar", chunk_size: int = 85, 
     }
 
 
+def _openai_embeddings(
+    *,
+    api_key: str,
+    model: str,
+    texts: list[str],
+) -> tuple[list[list[float]] | None, str | None]:
+    if not api_key:
+        return None, "OPENAI_API_KEY missing"
+    if not texts:
+        return None, "No texts for embedding"
+
+    payload = {
+        "model": model,
+        "input": texts,
+    }
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/embeddings",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        data = body.get("data")
+        if not isinstance(data, list):
+            return None, "Invalid embeddings response format"
+        vectors: list[list[float]] = []
+        for item in data:
+            emb = item.get("embedding") if isinstance(item, dict) else None
+            if not isinstance(emb, list):
+                return None, "Invalid embedding vector in response"
+            vectors.append([float(v) for v in emb])
+        return vectors, None
+    except urllib.error.HTTPError as exc:
+        error_text = exc.read().decode("utf-8", errors="replace")
+        return None, f"EMBED_HTTP_{exc.code}: {error_text[:280]}"
+    except Exception as exc:  # pragma: no cover - network/runtime dependent
+        return None, f"EMBED_ERROR: {exc}"
+
+
 def retrieve(
     *,
     query: str,
@@ -158,6 +215,8 @@ def retrieve(
     top_k: int = 5,
     fetch_k: int = 12,
     department_hint: str | None = None,
+    openai_api_key: str | None = None,
+    openai_embedding_model: str = "text-embedding-3-small",
 ) -> list[RetrievalHit]:
     query = (query or "").strip()
     if not query:
@@ -220,6 +279,25 @@ def retrieve(
                 "reasons": reasons,
             }
         )
+
+    # Optional semantic rerank with OpenAI embeddings when API key is present.
+    if openai_api_key and reranked:
+        embed_texts = [query, *[str(item["chunk"]["text"]) for item in reranked]]
+        vectors, embed_err = _openai_embeddings(
+            api_key=openai_api_key,
+            model=openai_embedding_model,
+            texts=embed_texts,
+        )
+        if vectors and len(vectors) == len(embed_texts):
+            q_vec = vectors[0]
+            for i, item in enumerate(reranked, start=1):
+                sem = max(0.0, _vec_cosine(q_vec, vectors[i]))
+                sem_bonus = min(0.35, sem * 0.35)
+                item["rerank_score"] += sem_bonus
+                item["reasons"].append(f"semantic_bonus={sem_bonus:.3f}")
+        elif embed_err:
+            for item in reranked:
+                item["reasons"].append(embed_err[:120])
 
     reranked.sort(key=lambda item: item["rerank_score"], reverse=True)
 
@@ -339,6 +417,7 @@ def answer_question(
     department_hint: str | None,
     openai_api_key: str | None,
     openai_model: str = "gpt-4o-mini",
+    openai_embedding_model: str = "text-embedding-3-small",
 ) -> dict[str, Any]:
     hits = retrieve(
         query=query,
@@ -347,6 +426,8 @@ def answer_question(
         top_k=top_k,
         fetch_k=max(12, top_k * 2),
         department_hint=department_hint,
+        openai_api_key=openai_api_key,
+        openai_embedding_model=openai_embedding_model,
     )
 
     llm_answer: str | None = None
