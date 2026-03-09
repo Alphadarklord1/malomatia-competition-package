@@ -1,0 +1,1 @@
+"""Malomatia production API scaffold."""

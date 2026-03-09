@@ -7,3 +7,6 @@ __pycache__/
 triage.db
 .pytest_cache/
 .venv/
+api/.venv/
+webapp/node_modules/
+webapp/.next/

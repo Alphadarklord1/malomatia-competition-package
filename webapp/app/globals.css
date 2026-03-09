@@ -1,0 +1,144 @@
+:root {
+  --primary: #8a1538;
+  --slate: #2f3a45;
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --border: #e0e3e7;
+  --text: #1f2933;
+  --muted: #5f6b76;
+  --success: #2e7d32;
+  --warning: #ed6c02;
+  --urgent: #c62828;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #eef2f5 0%, #f8fafb 100%);
+  color: var(--text);
+  font-family: Inter, sans-serif;
+}
+
+main.layout {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+}
+
+.sidebar {
+  background: var(--slate);
+  color: #f4f6f8;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  color: #dbe3ea;
+}
+
+.nav-link {
+  display: block;
+  padding: 10px 12px;
+  color: #dbe3ea;
+  text-decoration: none;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.nav-link.active {
+  background: rgba(138, 21, 56, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.content {
+  padding: 28px;
+  display: grid;
+  gap: 20px;
+}
+
+.hero,
+.panel,
+.metric-grid > div {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 20px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.metric-value {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 8px 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pill.on_track {
+  background: rgba(46, 125, 50, 0.14);
+  color: var(--success);
+}
+
+.pill.at_risk {
+  background: rgba(237, 108, 2, 0.14);
+  color: var(--warning);
+}
+
+.pill.breached {
+  background: rgba(198, 40, 40, 0.14);
+  color: var(--urgent);
+}
+
+@media (max-width: 960px) {
+  main.layout {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -109,6 +109,16 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 - Streamlit Community uses the cloud secrets panel
 - Do not commit secrets; `.streamlit/secrets.toml` is ignored in `.gitignore`
 
+## Production-Direction Scaffold
+
+This repo now contains a separate true-version starting point so the Streamlit prototype can remain stable:
+
+- `api/` -> FastAPI backend scaffold
+- `webapp/` -> Next.js frontend scaffold
+- `TRUE_VERSION_MIGRATION.md` -> migration phases and architecture notes
+
+These folders are intentionally separate from the Streamlit app. They are the starting point for the real platform, not a replacement that has already reached feature parity.
+
 ## Validation and Tests
 
 Run smoke + tests:
