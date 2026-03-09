@@ -941,6 +941,43 @@ def summarize_sla(cases: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def render_page_header(title_ar: str, title_en: str, subtitle_ar: str, subtitle_en: str, arabic_default: bool) -> None:
+    st.markdown(f"### {bi(title_ar, title_en, arabic_default)}")
+    st.caption(bi(subtitle_ar, subtitle_en, arabic_default))
+
+
+def render_global_worklist_toolbar(selected_nav: str, arabic_default: bool) -> None:
+    if selected_nav not in {"incoming", "queues", "review"}:
+        return
+
+    toolbar_cols = st.columns([4, 1.4, 1.2])
+    st.session_state["ui_search_query"] = toolbar_cols[0].text_input(
+        bi("بحث عام بالحالة أو النص", "Global search by case/text", arabic_default),
+        value=str(st.session_state.get("ui_search_query", "")),
+        key="ui_search_query_input",
+    ).strip()
+    st.session_state["ui_page_size"] = int(
+        toolbar_cols[1].selectbox(
+            bi("حجم الصفحة", "Page size", arabic_default),
+            options=[10, 25, 50],
+            index=[10, 25, 50].index(int(st.session_state.get("ui_page_size", 10)))
+            if int(st.session_state.get("ui_page_size", 10)) in [10, 25, 50]
+            else 0,
+            key="ui_page_size_input",
+        )
+    )
+    if toolbar_cols[2].button(ui("إعادة ضبط المرشحات", "Reset Filters", arabic_default), width="stretch"):
+        st.session_state["ui_search_query"] = ""
+        st.session_state["ui_page_index"] = 0
+        st.session_state["ui_default_queue"] = "all"
+        st.session_state["ui_sla_filter"] = "all"
+        st.session_state["ui_urgency_filter"] = "all"
+        st.session_state["ui_assigned_user_filter"] = "all"
+        st.session_state["ui_state_filter"] = "ALL"
+        st.session_state["ui_queue_scope"] = "ALL"
+        st.rerun()
+
+
 def build_filter_payload(
     *,
     search_query: str,
@@ -1187,9 +1224,7 @@ with header_cols[0]:
       <div class="top-meta">
         <span class="chip">{bi("اللغة", "Language", arabic_default)}: {("العربية" if arabic_default else "English")}</span>
         <span class="chip">{bi("المستخدم", "User", arabic_default)}: {display_name}</span>
-        <span class="chip">{bi("المعرف", "User ID", arabic_default)}: {current_user}</span>
-        <span class="chip">{bi("الدور", "Role", arabic_default)}: {role}</span>
-        <span class="chip">{bi("الموفر", "Provider", arabic_default)}: {auth_provider}</span>
+        <span class="chip">{bi("الوصول", "Access", arabic_default)}: {role} · {auth_provider}</span>
       </div>
     </div>
     """
@@ -1202,57 +1237,39 @@ with header_cols[1]:
             st.logout()
         st.rerun()
 
-sla_counts = summarize_sla(cases)
-metric_cols = st.columns(4)
-metric_cols[0].markdown(
-    f'<div class="metric-card"><div>{bi("إجمالي الحالات", "Total Cases", arabic_default)}</div><div class="metric-value">{len(cases)}</div></div>',
-    unsafe_allow_html=True,
-)
-metric_cols[1].markdown(
-    f'<div class="metric-card"><div>{bi("ضمن SLA", "SLA On Track", arabic_default)}</div><div class="metric-value">{sla_counts["ON_TRACK"]}</div></div>',
-    unsafe_allow_html=True,
-)
-metric_cols[2].markdown(
-    f'<div class="metric-card"><div>{bi("معرضة للخطر", "SLA At Risk", arabic_default)}</div><div class="metric-value">{sla_counts["AT_RISK"]}</div></div>',
-    unsafe_allow_html=True,
-)
-metric_cols[3].markdown(
-    f'<div class="metric-card"><div>{bi("متجاوزة SLA", "SLA Breached", arabic_default)}</div><div class="metric-value">{sla_counts["BREACHED"]}</div></div>',
-    unsafe_allow_html=True,
-)
-
-toolbar_cols = st.columns([4, 1.4, 1.2])
-st.session_state["ui_search_query"] = toolbar_cols[0].text_input(
-    bi("بحث عام بالحالة أو النص", "Global search by case/text", arabic_default),
-    value=str(st.session_state.get("ui_search_query", "")),
-    key="ui_search_query_input",
-).strip()
-st.session_state["ui_page_size"] = int(
-    toolbar_cols[1].selectbox(
-        bi("حجم الصفحة", "Page size", arabic_default),
-        options=[10, 25, 50],
-        index=[10, 25, 50].index(int(st.session_state.get("ui_page_size", 10)))
-        if int(st.session_state.get("ui_page_size", 10)) in [10, 25, 50]
-        else 0,
-        key="ui_page_size_input",
+if selected_nav in {"dashboard", "incoming", "queues", "review"}:
+    sla_counts = summarize_sla(cases)
+    metric_cols = st.columns(4)
+    metric_cols[0].markdown(
+        f'<div class="metric-card"><div>{bi("إجمالي الحالات", "Total Cases", arabic_default)}</div><div class="metric-value">{len(cases)}</div></div>',
+        unsafe_allow_html=True,
     )
-)
-if toolbar_cols[2].button(ui("إعادة ضبط المرشحات", "Reset Filters", arabic_default), width="stretch"):
-    st.session_state["ui_search_query"] = ""
-    st.session_state["ui_page_index"] = 0
-    st.session_state["ui_default_queue"] = "all"
-    st.session_state["ui_sla_filter"] = "all"
-    st.session_state["ui_urgency_filter"] = "all"
-    st.session_state["ui_assigned_user_filter"] = "all"
-    st.session_state["ui_state_filter"] = "ALL"
-    st.session_state["ui_queue_scope"] = "ALL"
-    st.rerun()
+    metric_cols[1].markdown(
+        f'<div class="metric-card"><div>{bi("ضمن SLA", "SLA On Track", arabic_default)}</div><div class="metric-value">{sla_counts["ON_TRACK"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+    metric_cols[2].markdown(
+        f'<div class="metric-card"><div>{bi("معرضة للخطر", "SLA At Risk", arabic_default)}</div><div class="metric-value">{sla_counts["AT_RISK"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+    metric_cols[3].markdown(
+        f'<div class="metric-card"><div>{bi("متجاوزة SLA", "SLA Breached", arabic_default)}</div><div class="metric-value">{sla_counts["BREACHED"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+render_global_worklist_toolbar(selected_nav, arabic_default)
 
 main_col, right_col = st.columns([2.2, 1], gap="large")
 
 if selected_nav == "dashboard":
     with main_col:
-        st.markdown(f"### {bi('لوحة التشغيل', 'Operations Dashboard', arabic_default)}")
+        render_page_header(
+            "لوحة التشغيل",
+            "Operations Dashboard",
+            "ملخص سريع للحالة التشغيلية والأحمال والتنبيهات.",
+            "Fast operational snapshot of workload, health, and alerts.",
+            arabic_default,
+        )
         state_counts: dict[str, int] = {}
         dept_counts: dict[str, int] = {}
         for case in cases:
@@ -1366,9 +1383,21 @@ if selected_nav == "dashboard":
 elif selected_nav in {"incoming", "queues"}:
     with main_col:
         if selected_nav == "incoming":
-            st.markdown(f"### {bi('الطلبات الواردة', 'Incoming Requests', arabic_default)}")
+            render_page_header(
+                "الطلبات الواردة",
+                "Incoming Requests",
+                "راجع الحالات الجديدة وحدد القرار المناسب بسرعة.",
+                "Review new cases and take the next operational action quickly.",
+                arabic_default,
+            )
         else:
-            st.markdown(f"### {bi('عرض الطوابير', 'Queue View', arabic_default)}")
+            render_page_header(
+                "عرض الطوابير",
+                "Queue View",
+                "اعرض الجدول التشغيلي الكامل مع المرشحات والإجراءات الجماعية.",
+                "Use the full operational table with filters and bulk actions.",
+                arabic_default,
+            )
 
         queue_labels = {
             "all": bi("الكل", "All", arabic_default),
@@ -1396,164 +1425,166 @@ elif selected_nav in {"incoming", "queues"}:
 
         saved_views = list_saved_views(conn, current_user)
         saved_view_options = ["__none__", *[v["name"] for v in saved_views]]
-        saved_cols = st.columns([2.2, 1, 1.2, 1])
-        selected_saved_view_name = saved_cols[0].selectbox(
-            bi("العروض المحفوظة", "Saved Views", arabic_default),
-            options=saved_view_options,
-            format_func=lambda n: bi("بدون", "None", arabic_default) if n == "__none__" else n,
-            key=f"{selected_nav}_saved_view_select",
-        )
-        if saved_cols[1].button(ui("تطبيق", "Apply", arabic_default), key=f"{selected_nav}_saved_apply"):
-            if selected_saved_view_name != "__none__":
-                chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
-                if chosen:
-                    try:
-                        apply_saved_view_filters(json.loads(str(chosen["filters_json"])))
-                    except json.JSONDecodeError:
-                        st.warning(bi("تنسيق العرض المحفوظ غير صالح.", "Saved view payload is invalid.", arabic_default))
-                    st.rerun()
-        view_name = saved_cols[2].text_input(
-            bi("اسم العرض", "View Name", arabic_default),
-            value=selected_saved_view_name if selected_saved_view_name != "__none__" else "",
-            key=f"{selected_nav}_saved_view_name",
-        ).strip()
-        if saved_cols[3].button(ui("حفظ", "Save", arabic_default), key=f"{selected_nav}_saved_save"):
-            if view_name:
-                payload_now = build_filter_payload(
-                    search_query=str(st.session_state.get("ui_search_query", "")),
-                    department_filter=str(st.session_state.get("ui_default_queue", "all")),
-                    state_filter=str(st.session_state.get("ui_state_filter", "ALL")),
-                    urgency_filter=str(st.session_state.get("ui_urgency_filter", "all")),
-                    sla_filter=str(st.session_state.get("ui_sla_filter", "all")),
-                    assigned_user_filter=str(st.session_state.get("ui_assigned_user_filter", "all")),
-                    queue_scope=str(st.session_state.get("ui_queue_scope", "ALL")),
-                    page_size=int(st.session_state.get("ui_page_size", 10)),
-                )
-                make_default = selected_saved_view_name != "__none__" and any(
-                    int(v.get("is_default", 0)) == 1 and v["name"] == selected_saved_view_name for v in saved_views
-                )
-                ok_sv, msg_sv = upsert_saved_view(conn, current_user, view_name, payload_now, make_default)
-                if ok_sv:
-                    append_audit_event(
-                        action="saved_view_save",
-                        result="success",
-                        details={"name": view_name, "is_default": make_default},
+
+        with st.expander(bi("العروض والمرشحات", "Views & Filters", arabic_default), expanded=False):
+            saved_cols = st.columns([2.2, 1, 1.2, 1])
+            selected_saved_view_name = saved_cols[0].selectbox(
+                bi("العروض المحفوظة", "Saved Views", arabic_default),
+                options=saved_view_options,
+                format_func=lambda n: bi("بدون", "None", arabic_default) if n == "__none__" else n,
+                key=f"{selected_nav}_saved_view_select",
+            )
+            if saved_cols[1].button(ui("تطبيق", "Apply", arabic_default), key=f"{selected_nav}_saved_apply"):
+                if selected_saved_view_name != "__none__":
+                    chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
+                    if chosen:
+                        try:
+                            apply_saved_view_filters(json.loads(str(chosen["filters_json"])))
+                        except json.JSONDecodeError:
+                            st.warning(bi("تنسيق العرض المحفوظ غير صالح.", "Saved view payload is invalid.", arabic_default))
+                        st.rerun()
+            view_name = saved_cols[2].text_input(
+                bi("اسم العرض", "View Name", arabic_default),
+                value=selected_saved_view_name if selected_saved_view_name != "__none__" else "",
+                key=f"{selected_nav}_saved_view_name",
+            ).strip()
+            if saved_cols[3].button(ui("حفظ", "Save", arabic_default), key=f"{selected_nav}_saved_save"):
+                if view_name:
+                    payload_now = build_filter_payload(
+                        search_query=str(st.session_state.get("ui_search_query", "")),
+                        department_filter=str(st.session_state.get("ui_default_queue", "all")),
+                        state_filter=str(st.session_state.get("ui_state_filter", "ALL")),
+                        urgency_filter=str(st.session_state.get("ui_urgency_filter", "all")),
+                        sla_filter=str(st.session_state.get("ui_sla_filter", "all")),
+                        assigned_user_filter=str(st.session_state.get("ui_assigned_user_filter", "all")),
+                        queue_scope=str(st.session_state.get("ui_queue_scope", "ALL")),
+                        page_size=int(st.session_state.get("ui_page_size", 10)),
                     )
-                    st.rerun()
+                    make_default = selected_saved_view_name != "__none__" and any(
+                        int(v.get("is_default", 0)) == 1 and v["name"] == selected_saved_view_name for v in saved_views
+                    )
+                    ok_sv, msg_sv = upsert_saved_view(conn, current_user, view_name, payload_now, make_default)
+                    if ok_sv:
+                        append_audit_event(
+                            action="saved_view_save",
+                            result="success",
+                            details={"name": view_name, "is_default": make_default},
+                        )
+                        st.rerun()
+                    else:
+                        append_audit_event(
+                            action="saved_view_save",
+                            result="failure" if msg_sv.startswith("DB_") else "denied",
+                            details={"name": view_name, "reason": msg_sv},
+                        )
+                        render_mutation_error(msg_sv, arabic_default)
                 else:
-                    append_audit_event(
-                        action="saved_view_save",
-                        result="failure" if msg_sv.startswith("DB_") else "denied",
-                        details={"name": view_name, "reason": msg_sv},
-                    )
-                    render_mutation_error(msg_sv, arabic_default)
-            else:
-                st.warning(bi("اسم العرض مطلوب.", "View name is required.", arabic_default))
+                    st.warning(bi("اسم العرض مطلوب.", "View name is required.", arabic_default))
 
-        manage_cols = st.columns([1, 1, 4])
-        if manage_cols[0].button(ui("افتراضي", "Set Default", arabic_default), key=f"{selected_nav}_saved_default"):
-            if selected_saved_view_name != "__none__":
-                chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
-                if chosen:
-                    try:
-                        filters_obj = json.loads(str(chosen["filters_json"]))
-                    except json.JSONDecodeError:
-                        filters_obj = {}
-                    ok_df, msg_df = upsert_saved_view(conn, current_user, selected_saved_view_name, filters_obj, True)
-                    if ok_df:
-                        append_audit_event(
-                            action="saved_view_default",
-                            result="success",
-                            details={"name": selected_saved_view_name},
-                        )
-                        st.rerun()
-                    else:
-                        append_audit_event(
-                            action="saved_view_default",
-                            result="failure" if msg_df.startswith("DB_") else "denied",
-                            details={"name": selected_saved_view_name, "reason": msg_df},
-                        )
-                        render_mutation_error(msg_df, arabic_default)
-        if manage_cols[1].button(ui("حذف", "Delete", arabic_default), key=f"{selected_nav}_saved_delete"):
-            if selected_saved_view_name != "__none__":
-                chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
-                if chosen:
-                    ok_del, msg_del = delete_saved_view(conn, current_user, str(chosen["view_id"]))
-                    if ok_del:
-                        append_audit_event(
-                            action="saved_view_delete",
-                            result="success",
-                            details={"name": selected_saved_view_name},
-                        )
-                        st.rerun()
-                    else:
-                        append_audit_event(
-                            action="saved_view_delete",
-                            result="failure" if msg_del.startswith("DB_") else "denied",
-                            details={"name": selected_saved_view_name, "reason": msg_del},
-                        )
-                        render_mutation_error(msg_del, arabic_default)
+            manage_cols = st.columns([1, 1, 4])
+            if manage_cols[0].button(ui("افتراضي", "Set Default", arabic_default), key=f"{selected_nav}_saved_default"):
+                if selected_saved_view_name != "__none__":
+                    chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
+                    if chosen:
+                        try:
+                            filters_obj = json.loads(str(chosen["filters_json"]))
+                        except json.JSONDecodeError:
+                            filters_obj = {}
+                        ok_df, msg_df = upsert_saved_view(conn, current_user, selected_saved_view_name, filters_obj, True)
+                        if ok_df:
+                            append_audit_event(
+                                action="saved_view_default",
+                                result="success",
+                                details={"name": selected_saved_view_name},
+                            )
+                            st.rerun()
+                        else:
+                            append_audit_event(
+                                action="saved_view_default",
+                                result="failure" if msg_df.startswith("DB_") else "denied",
+                                details={"name": selected_saved_view_name, "reason": msg_df},
+                            )
+                            render_mutation_error(msg_df, arabic_default)
+            if manage_cols[1].button(ui("حذف", "Delete", arabic_default), key=f"{selected_nav}_saved_delete"):
+                if selected_saved_view_name != "__none__":
+                    chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
+                    if chosen:
+                        ok_del, msg_del = delete_saved_view(conn, current_user, str(chosen["view_id"]))
+                        if ok_del:
+                            append_audit_event(
+                                action="saved_view_delete",
+                                result="success",
+                                details={"name": selected_saved_view_name},
+                            )
+                            st.rerun()
+                        else:
+                            append_audit_event(
+                                action="saved_view_delete",
+                                result="failure" if msg_del.startswith("DB_") else "denied",
+                                details={"name": selected_saved_view_name, "reason": msg_del},
+                            )
+                            render_mutation_error(msg_del, arabic_default)
 
-        filters_cols = st.columns(6)
-        queue_keys = list(queue_labels.keys())
-        current_queue_key = st.session_state.get("ui_default_queue", "all")
-        queue_index = queue_keys.index(current_queue_key) if current_queue_key in queue_keys else 0
-        selected_queue = filters_cols[0].selectbox(
-            bi("الطابور", "Department Queue", arabic_default),
-            options=list(queue_labels.values()),
-            index=queue_index,
-        )
-        selected_queue_key = {v: k for k, v in queue_labels.items()}[selected_queue]
-        st.session_state["ui_default_queue"] = selected_queue_key
-        selected_state = filters_cols[1].selectbox(
-            bi("حالة دورة الحياة", "Lifecycle State", arabic_default),
-            options=["ALL", *ALL_STATES],
-            index=(["ALL", *ALL_STATES].index(st.session_state.get("ui_state_filter", "ALL"))
-                   if st.session_state.get("ui_state_filter", "ALL") in ["ALL", *ALL_STATES] else 0),
-        )
-        st.session_state["ui_state_filter"] = selected_state
-        selected_urgency = filters_cols[2].selectbox(
-            bi("مرشح الأولوية", "Urgency Filter", arabic_default),
-            options=list(urgency_labels.values()),
-            index=list(urgency_labels.keys()).index(st.session_state.get("ui_urgency_filter", "all"))
-            if st.session_state.get("ui_urgency_filter", "all") in urgency_labels
-            else 0,
-        )
-        selected_urgency_key = {v: k for k, v in urgency_labels.items()}[selected_urgency]
-        st.session_state["ui_urgency_filter"] = selected_urgency_key
-        selected_sla = filters_cols[3].selectbox(
-            bi("مرشح SLA", "SLA Filter", arabic_default),
-            options=list(sla_labels.values()),
-            index=list(sla_labels.keys()).index(st.session_state.get("ui_sla_filter", "all"))
-            if st.session_state.get("ui_sla_filter", "all") in sla_labels
-            else 0,
-        )
-        selected_sla_key = {v: k for k, v in sla_labels.items()}[selected_sla]
-        st.session_state["ui_sla_filter"] = selected_sla_key
-        assigned_users = sorted({str(c.get("assigned_user") or "") for c in cases if c.get("assigned_user")})
-        assigned_labels = {
-            "all": bi("الكل", "All", arabic_default),
-            "unassigned": bi("غير مسند", "Unassigned", arabic_default),
-            **{u: u for u in assigned_users},
-        }
-        selected_assigned = filters_cols[4].selectbox(
-            bi("المسند إليه", "Assigned User", arabic_default),
-            options=list(assigned_labels.values()),
-            index=list(assigned_labels.keys()).index(st.session_state.get("ui_assigned_user_filter", "all"))
-            if st.session_state.get("ui_assigned_user_filter", "all") in assigned_labels
-            else 0,
-        )
-        selected_assigned_key = {v: k for k, v in assigned_labels.items()}[selected_assigned]
-        st.session_state["ui_assigned_user_filter"] = selected_assigned_key
-        selected_scope = filters_cols[5].selectbox(
-            bi("نطاق العرض", "Queue Scope", arabic_default),
-            options=list(scope_labels.values()),
-            index=list(scope_labels.keys()).index(st.session_state.get("ui_queue_scope", "ALL"))
-            if st.session_state.get("ui_queue_scope", "ALL") in scope_labels
-            else 0,
-        )
-        selected_scope_key = {v: k for k, v in scope_labels.items()}[selected_scope]
-        st.session_state["ui_queue_scope"] = selected_scope_key
+            filters_cols = st.columns(6)
+            queue_keys = list(queue_labels.keys())
+            current_queue_key = st.session_state.get("ui_default_queue", "all")
+            queue_index = queue_keys.index(current_queue_key) if current_queue_key in queue_keys else 0
+            selected_queue = filters_cols[0].selectbox(
+                bi("الطابور", "Department Queue", arabic_default),
+                options=list(queue_labels.values()),
+                index=queue_index,
+            )
+            selected_queue_key = {v: k for k, v in queue_labels.items()}[selected_queue]
+            st.session_state["ui_default_queue"] = selected_queue_key
+            selected_state = filters_cols[1].selectbox(
+                bi("حالة دورة الحياة", "Lifecycle State", arabic_default),
+                options=["ALL", *ALL_STATES],
+                index=(["ALL", *ALL_STATES].index(st.session_state.get("ui_state_filter", "ALL"))
+                       if st.session_state.get("ui_state_filter", "ALL") in ["ALL", *ALL_STATES] else 0),
+            )
+            st.session_state["ui_state_filter"] = selected_state
+            selected_urgency = filters_cols[2].selectbox(
+                bi("مرشح الأولوية", "Urgency Filter", arabic_default),
+                options=list(urgency_labels.values()),
+                index=list(urgency_labels.keys()).index(st.session_state.get("ui_urgency_filter", "all"))
+                if st.session_state.get("ui_urgency_filter", "all") in urgency_labels
+                else 0,
+            )
+            selected_urgency_key = {v: k for k, v in urgency_labels.items()}[selected_urgency]
+            st.session_state["ui_urgency_filter"] = selected_urgency_key
+            selected_sla = filters_cols[3].selectbox(
+                bi("مرشح SLA", "SLA Filter", arabic_default),
+                options=list(sla_labels.values()),
+                index=list(sla_labels.keys()).index(st.session_state.get("ui_sla_filter", "all"))
+                if st.session_state.get("ui_sla_filter", "all") in sla_labels
+                else 0,
+            )
+            selected_sla_key = {v: k for k, v in sla_labels.items()}[selected_sla]
+            st.session_state["ui_sla_filter"] = selected_sla_key
+            assigned_users = sorted({str(c.get("assigned_user") or "") for c in cases if c.get("assigned_user")})
+            assigned_labels = {
+                "all": bi("الكل", "All", arabic_default),
+                "unassigned": bi("غير مسند", "Unassigned", arabic_default),
+                **{u: u for u in assigned_users},
+            }
+            selected_assigned = filters_cols[4].selectbox(
+                bi("المسند إليه", "Assigned User", arabic_default),
+                options=list(assigned_labels.values()),
+                index=list(assigned_labels.keys()).index(st.session_state.get("ui_assigned_user_filter", "all"))
+                if st.session_state.get("ui_assigned_user_filter", "all") in assigned_labels
+                else 0,
+            )
+            selected_assigned_key = {v: k for k, v in assigned_labels.items()}[selected_assigned]
+            st.session_state["ui_assigned_user_filter"] = selected_assigned_key
+            selected_scope = filters_cols[5].selectbox(
+                bi("نطاق العرض", "Queue Scope", arabic_default),
+                options=list(scope_labels.values()),
+                index=list(scope_labels.keys()).index(st.session_state.get("ui_queue_scope", "ALL"))
+                if st.session_state.get("ui_queue_scope", "ALL") in scope_labels
+                else 0,
+            )
+            selected_scope_key = {v: k for k, v in scope_labels.items()}[selected_scope]
+            st.session_state["ui_queue_scope"] = selected_scope_key
 
         filtered_cases = filter_cases(
             cases,
@@ -1967,7 +1998,13 @@ elif selected_nav in {"incoming", "queues"}:
 
 elif selected_nav == "review":
     with main_col:
-        st.markdown(f"### {bi('مراجعة التشغيل', 'Operational Review', arabic_default)}")
+        render_page_header(
+            "مراجعة التشغيل",
+            "Operational Review",
+            "ركز على التصعيدات والثقة المنخفضة وحالات التجاوز.",
+            "Focus on escalations, low-confidence cases, and overrides.",
+            arabic_default,
+        )
         escalations = filter_cases(
             list_pending_escalations(conn),
             department_filter=str(st.session_state.get("ui_default_queue", "all")),
@@ -2142,13 +2179,12 @@ elif selected_nav == "review":
 
 elif selected_nav == "assistant":
     with main_col:
-        st.markdown(f"### {bi('المساعد المعرفي الموجه للسياسات', 'Domain RAG Assistant', arabic_default)}")
-        st.caption(
-            bi(
-                "يعتمد هذا المساعد على التجزئة + التمثيل المتجهي + الاسترجاع + إعادة الترتيب، مع إجابات موثقة بالمراجع.",
-                "This assistant uses chunking + vectorization + retrieval + re-ranking with cited, grounded answers.",
-                arabic_default,
-            )
+        render_page_header(
+            "المساعد المعرفي الموجه للسياسات",
+            "Domain RAG Assistant",
+            "اطرح سؤالاً تشغيلياً أو سياسياً لتحصل على إجابة موثقة بمراجع مسترجعة.",
+            "Ask an operational or policy question and get a grounded answer with retrieved citations.",
+            arabic_default,
         )
         try:
             kb_index = build_index(str(DOMAIN_KB_PATH), "ar" if arabic_default else "en")
@@ -2392,7 +2428,13 @@ elif selected_nav == "assistant":
                 st.write(baseline_answer(str(st.session_state.get("rag_query", "")), "ar" if arabic_default else "en"))
             with comparison_cols[1]:
                 st.markdown(f"#### {bi('مع RAG', 'With RAG', arabic_default)}")
-                st.write(str(result.get("answer", "")))
+                st.write(
+                    bi(
+                        "إجابة مؤرضة بالمصادر المسترجعة مع تتبع قرار واضح.",
+                        "Grounded answer using retrieved sources with a clear decision trace.",
+                        arabic_default,
+                    )
+                )
 
             st.markdown(f"#### {bi('الإجابة', 'Answer', arabic_default)}")
             st.write(str(result.get("answer", "")))
