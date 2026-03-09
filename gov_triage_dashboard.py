@@ -2390,10 +2390,9 @@ elif selected_nav == "assistant":
             ),
         ]
         st.markdown(f"#### {bi('استعلامات سريعة', 'Quick Queries', arabic_default)}")
-        sample_cols = st.columns(len(sample_queries))
-        for idx, (sample_id, query_ar, query_en) in enumerate(sample_queries):
+        for sample_id, query_ar, query_en in sample_queries:
             sample_label = query_ar if arabic_default else query_en
-            if sample_cols[idx].button(sample_label, key=sample_id):
+            if st.button(sample_label, key=sample_id, width="stretch"):
                 st.session_state["rag_query"] = sample_label
                 st.session_state["rag_last_result"] = None
                 st.rerun()

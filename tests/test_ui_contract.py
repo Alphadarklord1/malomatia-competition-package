@@ -108,3 +108,5 @@ def test_mobile_responsive_theme_contract_present() -> None:
     assert '[data-testid="stForm"] [data-testid="stHorizontalBlock"]' in theme
     assert '[data-testid="stDownloadButton"] > button' in theme
     assert ".trace-row" in theme
+    assert "overflow-wrap: anywhere" in theme
+    assert "word-break: break-word" in theme

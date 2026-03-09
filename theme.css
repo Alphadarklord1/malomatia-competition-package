@@ -362,6 +362,16 @@ h3 { font-size: 16px; }
 [data-testid="stMarkdownContainer"] p,
 [data-testid="stMarkdownContainer"] li {
   color: var(--text-main) !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+[data-testid="stMarkdownContainer"] ul,
+[data-testid="stMarkdownContainer"] ol,
+[data-testid="stMarkdownContainer"] div,
+[data-testid="stMarkdownContainer"] span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Keep sidebar text readable even when markdown container styles apply. */
