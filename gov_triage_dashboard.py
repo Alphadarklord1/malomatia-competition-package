@@ -83,6 +83,8 @@ AUDIT_LOG_PATH = BASE_DIR / "audit.log.jsonl"
 AUDIT_ARCHIVE_PATH = BASE_DIR / "audit.archive.jsonl"
 FEEDBACK_LOG_PATH = BASE_DIR / "feedback.log.jsonl"
 AUTH_SCHEMA_VERSION = 7
+APP_VERSION = "1.0.0"
+RELEASE_STAGE = "final_candidate"
 LOGIN_LOCKOUT_AFTER = 5
 LOGIN_LOCKOUT_MINUTES = 15
 
@@ -148,6 +150,7 @@ def ensure_session_defaults() -> None:
         "security_session_max_hours": 8,
         "security_audit_retention_days": 90,
         "security_privacy_masking_enabled": True,
+        "security_public_signup_enabled": True,
         "revealed_case_ids": set(),
         "auth_user_id": None,
         "auth_display_name": None,
@@ -575,6 +578,8 @@ def beta_readiness_snapshot(conn_obj: Any) -> dict[str, Any]:
     except Exception:
         pass
     return {
+        "app_version": APP_VERSION,
+        "release_stage": RELEASE_STAGE,
         "schema_version": schema_version,
         "schema_expected": CURRENT_SCHEMA_VERSION,
         "audit_chain_ok": chain_ok,
@@ -589,6 +594,17 @@ def beta_readiness_snapshot(conn_obj: Any) -> dict[str, Any]:
         "knowledge_documents": doc_count,
         "knowledge_chunks": chunk_count,
     }
+
+
+def release_status_label(snapshot: dict[str, Any]) -> str:
+    if (
+        snapshot["schema_version"] == snapshot["schema_expected"]
+        and snapshot["audit_chain_ok"]
+        and snapshot["case_count"] > 0
+        and snapshot["knowledge_documents"] > 0
+    ):
+        return "READY"
+    return "CHECK"
 
 
 def clear_auth_state() -> None:
@@ -678,6 +694,9 @@ def login_screen(conn_obj: Any) -> None:
         st.markdown("### Single Sign-On")
         st.caption("Google and Microsoft sign-in will appear here when OIDC is configured for this deployment.")
         st.markdown("---")
+
+    if not bool(st.session_state.get("security_public_signup_enabled", True)):
+        st.caption("New account creation is currently disabled by the administrator.")
 
     pending_mfa_user_id = str(st.session_state.get("pending_mfa_user_id") or "").strip()
 
@@ -810,6 +829,9 @@ def login_screen(conn_obj: Any) -> None:
             return
 
         finalize_local_login(conn_obj, user, username.strip())
+
+    if not bool(st.session_state.get("security_public_signup_enabled", True)):
+        return
 
     st.markdown("---")
     with st.expander("Create Account"):
@@ -1565,6 +1587,7 @@ if selected_nav == "dashboard":
     with right_col:
         audit_events = read_audit_events()
         kpis = compute_operational_kpis(cases, audit_events)
+        release_snapshot = beta_readiness_snapshot(conn)
         st.markdown(f"### {bi('ملخص مؤشرات الأداء', 'KPI Snapshot', arabic_default)}")
         open_alerts_count = len(list_notifications(conn, include_acked=False))
         st.markdown(
@@ -1575,6 +1598,17 @@ if selected_nav == "dashboard":
                     f"- {bi('نسبة تجاوز SLA', 'SLA breached %', arabic_default)}: {kpis['sla_breached_pct']:.1f}%",
                     f"- {bi('معدل التجاوز', 'Override rate', arabic_default)}: {kpis['override_rate_pct']:.1f}%",
                     f"- {bi('تنبيهات مفتوحة', 'Open alerts', arabic_default)}: {open_alerts_count}",
+                ]
+            )
+        )
+        st.markdown(f"### {bi('حالة الإصدار', 'Release Status', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- {bi('الإصدار', 'Version', arabic_default)}: {release_snapshot['app_version']}",
+                    f"- {bi('المرحلة', 'Stage', arabic_default)}: {release_snapshot['release_stage']}",
+                    f"- {bi('التقييم', 'Status', arabic_default)}: {release_status_label(release_snapshot)}",
+                    f"- {bi('إنشاء الحسابات العامة', 'Public signup', arabic_default)}: {bi('مفعل', 'Enabled', arabic_default) if st.session_state.get('security_public_signup_enabled', True) else bi('معطل', 'Disabled', arabic_default)}",
                 ]
             )
         )
@@ -3064,6 +3098,11 @@ elif selected_nav == "settings":
                 value=bool(st.session_state["security_privacy_masking_enabled"]),
                 disabled=not can_write_settings,
             )
+            public_signup_enabled = c2.checkbox(
+                bi("تفعيل إنشاء الحسابات من صفحة الدخول", "Enable account creation from login page", arabic_default),
+                value=bool(st.session_state["security_public_signup_enabled"]),
+                disabled=not can_write_settings,
+            )
             save_clicked = st.form_submit_button(
                 ui("حفظ الإعدادات", "Save Settings", arabic_default),
                 type="primary",
@@ -3080,6 +3119,7 @@ elif selected_nav == "settings":
                 st.session_state["security_session_max_hours"] = int(session_max_hours)
                 st.session_state["security_audit_retention_days"] = int(audit_retention_days)
                 st.session_state["security_privacy_masking_enabled"] = bool(privacy_masking_enabled)
+                st.session_state["security_public_signup_enabled"] = bool(public_signup_enabled)
                 append_audit_event(
                     action="settings_save",
                     result="success",
@@ -3092,6 +3132,7 @@ elif selected_nav == "settings":
                         "security_session_max_hours": int(session_max_hours),
                         "security_audit_retention_days": int(audit_retention_days),
                         "security_privacy_masking_enabled": bool(privacy_masking_enabled),
+                        "security_public_signup_enabled": bool(public_signup_enabled),
                     },
                 )
                 st.toast(bi("تم حفظ الإعدادات", "Settings saved", arabic_default))
@@ -3107,6 +3148,7 @@ elif selected_nav == "settings":
                 st.session_state["security_session_max_hours"] = 8
                 st.session_state["security_audit_retention_days"] = 90
                 st.session_state["security_privacy_masking_enabled"] = True
+                st.session_state["security_public_signup_enabled"] = True
                 st.session_state["revealed_case_ids"] = set()
                 append_audit_event(action="settings_reset", result="success", details={"reason": "user_requested"})
                 st.rerun()
@@ -3558,6 +3600,28 @@ elif selected_nav == "settings":
                 mime="application/jsonl",
                 width="stretch",
             )
+            st.download_button(
+                label=ui("تصدير الحالات", "Export Cases", arabic_default),
+                data=json.dumps(list_cases(conn), ensure_ascii=False, indent=2),
+                file_name="cases.export.json",
+                mime="application/json",
+                width="stretch",
+            )
+            st.download_button(
+                label=ui("تصدير أحداث سير العمل", "Export Workflow Events", arabic_default),
+                data=json.dumps(list_workflow_events(conn, limit=1000), ensure_ascii=False, indent=2),
+                file_name="workflow_events.export.json",
+                mime="application/json",
+                width="stretch",
+            )
+            if DB_PATH.exists():
+                st.download_button(
+                    label=ui("تنزيل نسخة قاعدة البيانات", "Download Database Backup", arabic_default),
+                    data=DB_PATH.read_bytes(),
+                    file_name="triage.db",
+                    mime="application/octet-stream",
+                    width="stretch",
+                )
         else:
             st.caption(bi("تصدير السجل متاح للمدقق أو المشرف فقط.", "Audit export is available to auditor/supervisor only.", arabic_default))
 

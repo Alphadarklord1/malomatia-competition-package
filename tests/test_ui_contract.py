@@ -97,6 +97,8 @@ def test_real_auth_directory_contract_present() -> None:
     assert "Save Two-Step Verification" in source
     assert "Generate new MFA secret" in source
     assert "Create account" in source
+    assert "security_public_signup_enabled" in source
+    assert "New account creation is currently disabled by the administrator." in source
 
 
 def test_beta_support_contract_present() -> None:
@@ -108,6 +110,10 @@ def test_beta_support_contract_present() -> None:
     assert "Beta Operations" in source
     assert "Export Feedback Log" in source
     assert "feedback.log.jsonl" in source
+    assert "Release Status" in source
+    assert "Export Cases" in source
+    assert "Export Workflow Events" in source
+    assert "Download Database Backup" in source
 
 
 def test_mobile_responsive_theme_contract_present() -> None:
