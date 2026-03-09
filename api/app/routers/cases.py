@@ -4,10 +4,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from app.db import get_session
-from app.schemas import CaseActionRequest, CaseActionResponse, CaseDetail, PaginatedCasesResponse, TimelineResponse
+from app.schemas import (
+    CaseActionRequest,
+    CaseActionResponse,
+    CaseAssignmentRequest,
+    CaseDetail,
+    PaginatedCasesResponse,
+    TimelineResponse,
+)
 from app.security import CurrentUser, get_current_user, require_roles
 from app.service import (
     approve_case_action,
+    assign_case_action,
     build_timeline,
     case_to_detail,
     case_to_summary,
@@ -25,6 +33,7 @@ def list_cases(
     state: str | None = None,
     urgency: str | None = None,
     assigned_user: str | None = None,
+    search: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
     session: Session = Depends(get_session),
@@ -36,6 +45,7 @@ def list_cases(
         state=state,
         urgency=urgency,
         assigned_user=assigned_user,
+        search=search,
         page=page,
         page_size=page_size,
     )
@@ -65,6 +75,24 @@ def approve_case(
 ) -> CaseActionResponse:
     case = approve_case_action(session, get_case_or_404(session, case_id), current_user, payload.reason)
     return CaseActionResponse(message="Case approved", case=case_to_detail(case))
+
+
+@router.post("/{case_id}/assign", response_model=CaseActionResponse)
+def assign_case(
+    case_id: str,
+    payload: CaseAssignmentRequest,
+    session: Session = Depends(get_session),
+    current_user: CurrentUser = Depends(require_roles("operator", "supervisor")),
+) -> CaseActionResponse:
+    case = assign_case_action(
+        session,
+        get_case_or_404(session, case_id),
+        current_user,
+        payload.assigned_team,
+        payload.assigned_user,
+        payload.reason,
+    )
+    return CaseActionResponse(message="Case assigned", case=case_to_detail(case))
 
 
 @router.post("/{case_id}/override", response_model=CaseActionResponse)

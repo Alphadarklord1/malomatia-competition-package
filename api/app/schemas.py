@@ -99,6 +99,12 @@ class CaseActionRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
+class CaseAssignmentRequest(BaseModel):
+    assigned_team: str = Field(min_length=2, max_length=100)
+    assigned_user: Optional[str] = Field(default=None, max_length=100)
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 class CaseActionResponse(BaseModel):
     message: str
     case: CaseDetail
@@ -120,6 +126,35 @@ class TimelineEvent(BaseModel):
 class TimelineResponse(BaseModel):
     case_id: str
     events: list[TimelineEvent]
+
+
+class ReviewCase(BaseModel):
+    case: CaseSummary
+    review_flags: list[str]
+    latest_override_at: Optional[datetime] = None
+
+
+class ReviewSummaryResponse(BaseModel):
+    escalated: list[ReviewCase]
+    low_confidence: list[ReviewCase]
+    recently_overridden: list[ReviewCase]
+
+
+class NotificationItem(BaseModel):
+    notification_id: str
+    case_id: Optional[str] = None
+    category: str
+    severity: str
+    title: str
+    message: str
+    ack_by_user: Optional[str] = None
+    ack_at_utc: Optional[datetime] = None
+    created_at_utc: datetime
+    updated_at_utc: datetime
+
+
+class NotificationsResponse(BaseModel):
+    items: list[NotificationItem]
 
 
 class RagQueryRequest(BaseModel):

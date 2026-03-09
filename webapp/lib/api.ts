@@ -1,9 +1,12 @@
 import type {
   AuthUser,
+  CaseActionResult,
   CaseDetail,
   DashboardSummary,
+  NotificationsResponse,
   PaginatedCases,
   RagResponse,
+  ReviewSummary,
   TimelineEvent,
 } from "./types";
 
@@ -79,20 +82,53 @@ export function fetchTimeline(accessToken: string, caseId: string): Promise<{ ca
   return apiFetch<{ case_id: string; events: TimelineEvent[] }>(`/cases/${caseId}/timeline`, {}, accessToken);
 }
 
-export function approveCase(accessToken: string, caseId: string, reason: string): Promise<{ message: string; case: CaseDetail }> {
-  return apiFetch<{ message: string; case: CaseDetail }>(
+export function approveCase(accessToken: string, caseId: string, reason: string): Promise<CaseActionResult> {
+  return apiFetch<CaseActionResult>(
     `/cases/${caseId}/approve`,
     { method: "POST", body: JSON.stringify({ reason }) },
     accessToken,
   );
 }
 
-export function overrideCase(accessToken: string, caseId: string, reason: string): Promise<{ message: string; case: CaseDetail }> {
-  return apiFetch<{ message: string; case: CaseDetail }>(
+export function assignCase(
+  accessToken: string,
+  caseId: string,
+  assignedTeam: string,
+  assignedUser: string,
+  reason: string,
+): Promise<CaseActionResult> {
+  return apiFetch<CaseActionResult>(
+    `/cases/${caseId}/assign`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        assigned_team: assignedTeam,
+        assigned_user: assignedUser || null,
+        reason,
+      }),
+    },
+    accessToken,
+  );
+}
+
+export function overrideCase(accessToken: string, caseId: string, reason: string): Promise<CaseActionResult> {
+  return apiFetch<CaseActionResult>(
     `/cases/${caseId}/override`,
     { method: "POST", body: JSON.stringify({ reason }) },
     accessToken,
   );
+}
+
+export function fetchReviewSummary(accessToken: string): Promise<ReviewSummary> {
+  return apiFetch<ReviewSummary>("/review/summary", {}, accessToken);
+}
+
+export function fetchNotifications(accessToken: string, includeAcked = false): Promise<NotificationsResponse> {
+  return apiFetch<NotificationsResponse>(`/notifications?include_acked=${includeAcked ? "true" : "false"}`, {}, accessToken);
+}
+
+export function acknowledgeNotification(accessToken: string, notificationId: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/notifications/${notificationId}/ack`, { method: "POST" }, accessToken);
 }
 
 export function queryRag(

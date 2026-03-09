@@ -7,8 +7,11 @@ Implemented:
 - `/auth/me`
 - dashboard summary
 - filterable case list with pagination
+- assignment route
 - case detail
 - approve / override workflow actions
+- review summary
+- notifications + ACK flow
 - workflow + audit timeline
 - grounded RAG query endpoint
 - Postgres-first runtime with seeded demo users and cases
@@ -47,9 +50,13 @@ Key settings in `.env`:
 - `GET /dashboard/summary`
 - `GET /cases`
 - `GET /cases/{case_id}`
+- `POST /cases/{case_id}/assign`
 - `POST /cases/{case_id}/approve`
 - `POST /cases/{case_id}/override`
 - `GET /cases/{case_id}/timeline`
+- `GET /review/summary`
+- `GET /notifications`
+- `POST /notifications/{notification_id}/ack`
 - `POST /rag/query`
 
 ## Validation

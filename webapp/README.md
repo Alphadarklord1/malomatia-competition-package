@@ -5,8 +5,11 @@ This folder is the working frontend for the real product path.
 Implemented:
 - local login against FastAPI
 - dashboard summary cards
+- incoming requests page with approve / assign / override
 - queue list with filters
 - case detail with approve / override actions
+- review page
+- notifications page
 - RAG assistant wired to the API
 - session-based auth state in the browser
 - mobile-responsive formal government dashboard layout
@@ -26,7 +29,10 @@ Expected API base URL:
 Main routes:
 - `/login`
 - `/dashboard`
+- `/incoming`
 - `/queues`
+- `/review`
+- `/notifications`
 - `/cases/[caseId]`
 - `/assistant`
 

@@ -62,6 +62,11 @@ export type CaseDetail = {
   updated_at_utc: string;
 };
 
+export type CaseActionResult = {
+  message: string;
+  case: CaseDetail;
+};
+
 export type TimelineEvent = {
   source: string;
   event_type: string;
@@ -80,6 +85,35 @@ export type PaginatedCases = {
   page: number;
   page_size: number;
   total: number;
+};
+
+export type ReviewCase = {
+  case: CaseSummary;
+  review_flags: string[];
+  latest_override_at?: string | null;
+};
+
+export type ReviewSummary = {
+  escalated: ReviewCase[];
+  low_confidence: ReviewCase[];
+  recently_overridden: ReviewCase[];
+};
+
+export type NotificationItem = {
+  notification_id: string;
+  case_id?: string | null;
+  category: string;
+  severity: string;
+  title: string;
+  message: string;
+  ack_by_user?: string | null;
+  ack_at_utc?: string | null;
+  created_at_utc: string;
+  updated_at_utc: string;
+};
+
+export type NotificationsResponse = {
+  items: NotificationItem[];
 };
 
 export type RagHit = {

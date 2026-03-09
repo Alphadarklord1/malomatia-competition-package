@@ -12,7 +12,9 @@ from app.routers.auth import router as auth_router
 from app.routers.cases import router as cases_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.health import router as health_router
+from app.routers.notifications import router as notifications_router
 from app.routers.rag import router as rag_router
+from app.routers.review import router as review_router
 from app.seed import seed_database
 
 
@@ -41,6 +43,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(dashboard_router)
     app.include_router(cases_router)
+    app.include_router(review_router)
+    app.include_router(notifications_router)
     app.include_router(rag_router)
 
     @app.get("/")

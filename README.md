@@ -138,7 +138,10 @@ Core MVP coverage:
 - local JWT login (`/auth/login`, `/auth/me`)
 - KPI summary (`/dashboard/summary`)
 - filterable queue list (`/cases`)
+- incoming triage view with approve/assign/override
 - case detail + approve/override actions (`/cases/{case_id}`)
+- review summary (`/review/summary`)
+- notifications and acknowledge flow (`/notifications`)
 - workflow + audit timeline (`/cases/{case_id}/timeline`)
 - grounded RAG endpoint (`/rag/query`)
 

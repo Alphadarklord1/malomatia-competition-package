@@ -73,3 +73,16 @@ class AuditEvent(SQLModel, table=True):
     prev_hash: str
     event_hash: str
     timestamp_utc: datetime = Field(index=True)
+
+
+class Notification(SQLModel, table=True):
+    notification_id: str = Field(primary_key=True)
+    case_id: Optional[str] = Field(default=None, index=True)
+    category: str = Field(index=True)
+    severity: str = Field(index=True)
+    title: str
+    message: str
+    ack_by_user: Optional[str] = Field(default=None, index=True)
+    ack_at_utc: Optional[datetime] = None
+    created_at_utc: datetime = Field(index=True)
+    updated_at_utc: datetime = Field(index=True)

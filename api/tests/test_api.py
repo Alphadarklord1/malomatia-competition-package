@@ -52,16 +52,31 @@ def test_dashboard_summary_returns_seeded_counts(client: TestClient):
 def test_case_filters_and_pagination_are_deterministic(client: TestClient):
     token = login_and_get_token(client, "operator_demo", "Operator@123")
     first = client.get(
-        "/cases?department=Immigration&page=1&page_size=2",
+        "/cases?department=Immigration&search=residency&page=1&page_size=2",
         headers=auth_headers(token),
     )
     second = client.get(
-        "/cases?department=Immigration&page=1&page_size=2",
+        "/cases?department=Immigration&search=residency&page=1&page_size=2",
         headers=auth_headers(token),
     )
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
     assert first.json() == second.json()
+
+
+def test_operator_can_assign_case(client: TestClient):
+    token = login_and_get_token(client, "operator_demo", "Operator@123")
+    case_id = first_case_id(client, token)
+    assign = client.post(
+        f"/cases/{case_id}/assign",
+        json={"assigned_team": "Immigration", "assigned_user": "ops_imm_1", "reason": "queue routing"},
+        headers=auth_headers(token),
+    )
+    assert assign.status_code == 200, assign.text
+    payload = assign.json()["case"]
+    assert payload["assigned_team"] == "Immigration"
+    assert payload["assigned_user"] == "ops_imm_1"
+    assert payload["state"] in {"ASSIGNED", "TRIAGED"}
 
 
 def test_operator_can_approve_but_cannot_override(client: TestClient):
@@ -99,6 +114,37 @@ def test_supervisor_can_override_and_timeline_updates(client: TestClient):
     assert timeline.status_code == 200, timeline.text
     events = timeline.json()["events"]
     assert any(event["event_type"] == "OVERRIDE" for event in events)
+
+
+def test_review_summary_and_notifications_flow(client: TestClient):
+    token = login_and_get_token(client, "supervisor_demo", "Supervisor@123")
+    case_id = first_case_id(client, token)
+    override = client.post(
+        f"/cases/{case_id}/override",
+        json={"reason": "send to human review"},
+        headers=auth_headers(token),
+    )
+    assert override.status_code == 200, override.text
+
+    review = client.get("/review/summary", headers=auth_headers(token))
+    assert review.status_code == 200, review.text
+    review_payload = review.json()
+    assert review_payload["escalated"]
+    assert review_payload["recently_overridden"]
+
+    notifications = client.get("/notifications", headers=auth_headers(token))
+    assert notifications.status_code == 200, notifications.text
+    items = notifications.json()["items"]
+    assert items
+    notification_id = items[0]["notification_id"]
+
+    ack = client.post(f"/notifications/{notification_id}/ack", headers=auth_headers(token))
+    assert ack.status_code == 200, ack.text
+
+    include_acked = client.get("/notifications?include_acked=true", headers=auth_headers(token))
+    assert include_acked.status_code == 200, include_acked.text
+    acked_items = include_acked.json()["items"]
+    assert any(item["notification_id"] == notification_id and item["ack_by_user"] == "supervisor_demo" for item in acked_items)
 
 
 def test_rag_route_uses_local_fallback_without_openai_key(client: TestClient):
