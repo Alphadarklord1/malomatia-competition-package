@@ -313,9 +313,6 @@ def bi(ar: str, en: str, arabic_default: bool) -> str:
     return ar if arabic_default else en
 
 
-ui = bi
-
-
 def mask_pii(text: str) -> str:
     masked = EMAIL_RE.sub("[EMAIL_REDACTED]", text)
     masked = QID_RE.sub("[QID_REDACTED]", masked)
@@ -1203,7 +1200,7 @@ def render_pagination_controls(
     prev_disabled = safe_index <= 0
     next_disabled = safe_index >= total_pages - 1
 
-    if col_l.button(ui("السابق", "Previous", arabic_default), key=f"{key_prefix}_prev", disabled=prev_disabled):
+    if col_l.button(bi("السابق", "Previous", arabic_default), key=f"{key_prefix}_prev", disabled=prev_disabled):
         safe_index = max(0, safe_index - 1)
     col_m.caption(
         bi(
@@ -1212,7 +1209,7 @@ def render_pagination_controls(
             arabic_default,
         )
     )
-    if col_r.button(ui("التالي", "Next", arabic_default), key=f"{key_prefix}_next", disabled=next_disabled):
+    if col_r.button(bi("التالي", "Next", arabic_default), key=f"{key_prefix}_next", disabled=next_disabled):
         safe_index = min(total_pages - 1, safe_index + 1)
     return safe_index, total_pages
 
@@ -1250,7 +1247,7 @@ def render_global_worklist_toolbar(selected_nav: str, arabic_default: bool) -> N
             key="ui_page_size_input",
         )
     )
-    if toolbar_cols[2].button(ui("إعادة ضبط المرشحات", "Reset Filters", arabic_default), width="stretch"):
+    if toolbar_cols[2].button(bi("إعادة ضبط المرشحات", "Reset Filters", arabic_default), width="stretch"):
         st.session_state["ui_search_query"] = ""
         st.session_state["ui_page_index"] = 0
         st.session_state["ui_default_queue"] = "all"
@@ -1454,7 +1451,7 @@ with st.sidebar:
             arabic_default,
         )
     )
-    if st.button(ui("تبديل المستخدم", "Switch User", arabic_default), width="stretch"):
+    if st.button(bi("تبديل المستخدم", "Switch User", arabic_default), width="stretch"):
         append_audit_event(action="logout", result="success", details={"reason": "switch_user"})
         clear_auth_state()
         if auth_provider != "local" and getattr(st.user, "is_logged_in", False):
@@ -1514,7 +1511,7 @@ with header_cols[0]:
     """
     st.markdown(top_bar_html, unsafe_allow_html=True)
 with header_cols[1]:
-    if st.button(ui("تسجيل الخروج", "Logout", arabic_default), width="stretch"):
+    if st.button(bi("تسجيل الخروج", "Logout", arabic_default), width="stretch"):
         append_audit_event(action="logout", result="success", details={"reason": "user_initiated"})
         clear_auth_state()
         if auth_provider != "local" and getattr(st.user, "is_logged_in", False):
@@ -1758,7 +1755,7 @@ elif selected_nav in {"incoming", "queues"}:
                 format_func=lambda n: bi("بدون", "None", arabic_default) if n == "__none__" else n,
                 key=f"{selected_nav}_saved_view_select",
             )
-            if saved_cols[1].button(ui("تطبيق", "Apply", arabic_default), key=f"{selected_nav}_saved_apply"):
+            if saved_cols[1].button(bi("تطبيق", "Apply", arabic_default), key=f"{selected_nav}_saved_apply"):
                 if selected_saved_view_name != "__none__":
                     chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
                     if chosen:
@@ -1772,7 +1769,7 @@ elif selected_nav in {"incoming", "queues"}:
                 value=selected_saved_view_name if selected_saved_view_name != "__none__" else "",
                 key=f"{selected_nav}_saved_view_name",
             ).strip()
-            if saved_cols[3].button(ui("حفظ", "Save", arabic_default), key=f"{selected_nav}_saved_save"):
+            if saved_cols[3].button(bi("حفظ", "Save", arabic_default), key=f"{selected_nav}_saved_save"):
                 if view_name:
                     payload_now = build_filter_payload(
                         search_query=str(st.session_state.get("ui_search_query", "")),
@@ -1806,7 +1803,7 @@ elif selected_nav in {"incoming", "queues"}:
                     st.warning(bi("اسم العرض مطلوب.", "View name is required.", arabic_default))
 
             manage_cols = st.columns([1, 1, 4])
-            if manage_cols[0].button(ui("افتراضي", "Set Default", arabic_default), key=f"{selected_nav}_saved_default"):
+            if manage_cols[0].button(bi("افتراضي", "Set Default", arabic_default), key=f"{selected_nav}_saved_default"):
                 if selected_saved_view_name != "__none__":
                     chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
                     if chosen:
@@ -1829,7 +1826,7 @@ elif selected_nav in {"incoming", "queues"}:
                                 details={"name": selected_saved_view_name, "reason": msg_df},
                             )
                             render_mutation_error(msg_df, arabic_default)
-            if manage_cols[1].button(ui("حذف", "Delete", arabic_default), key=f"{selected_nav}_saved_delete"):
+            if manage_cols[1].button(bi("حذف", "Delete", arabic_default), key=f"{selected_nav}_saved_delete"):
                 if selected_saved_view_name != "__none__":
                     chosen = next((v for v in saved_views if v["name"] == selected_saved_view_name), None)
                     if chosen:
@@ -1973,20 +1970,20 @@ elif selected_nav in {"incoming", "queues"}:
 
                 action_cols = st.columns([1.2, 1.2, 1.4, 4.2])
                 approve_clicked = action_cols[0].button(
-                    ui("اعتماد", "Approve", arabic_default),
+                    bi("اعتماد", "Approve", arabic_default),
                     key=f"approve_{case['case_id']}",
                     type="primary",
                     width="stretch",
                     disabled=not can_approve,
                 )
                 override_clicked = action_cols[1].button(
-                    ui("تجاوز", "Override", arabic_default),
+                    bi("تجاوز", "Override", arabic_default),
                     key=f"override_{case['case_id']}",
                     width="stretch",
                     disabled=not can_override,
                 )
                 select_clicked = action_cols[2].button(
-                    ui("تحديد", "Select", arabic_default),
+                    bi("تحديد", "Select", arabic_default),
                     key=f"select_{case['case_id']}",
                     width="stretch",
                 )
@@ -2074,7 +2071,7 @@ elif selected_nav in {"incoming", "queues"}:
                             disabled=not can_assign,
                         )
                         assign_clicked = st.button(
-                            ui("تحديث الإسناد", "Update Assignment", arabic_default),
+                            bi("تحديث الإسناد", "Update Assignment", arabic_default),
                             key=f"assign_btn_{case['case_id']}",
                             disabled=not can_assign,
                         )
@@ -2123,7 +2120,7 @@ elif selected_nav in {"incoming", "queues"}:
                                 disabled=not can_transition,
                             )
                             transition_clicked = st.button(
-                                ui("تطبيق الانتقال", "Apply Transition", arabic_default),
+                                bi("تطبيق الانتقال", "Apply Transition", arabic_default),
                                 key=f"transition_btn_{case['case_id']}",
                                 disabled=not can_transition,
                             )
@@ -2175,7 +2172,7 @@ elif selected_nav in {"incoming", "queues"}:
             )
             render_case_table(paged_cases, arabic_default)
             st.download_button(
-                label=ui("تصدير CSV (حسب المرشحات)", "Export CSV (Filtered)", arabic_default),
+                label=bi("تصدير CSV (حسب المرشحات)", "Export CSV (Filtered)", arabic_default),
                 data=cases_to_csv_bytes(filtered_cases, arabic_default),
                 file_name="queue_filtered_export.csv",
                 mime="text/csv",
@@ -2205,7 +2202,7 @@ elif selected_nav in {"incoming", "queues"}:
                     options=list(ALL_STATES),
                     key="bulk_target_state",
                 )
-                if bulk_cols[3].button(ui("تنفيذ جماعي", "Run Bulk", arabic_default), key="bulk_run_btn"):
+                if bulk_cols[3].button(bi("تنفيذ جماعي", "Run Bulk", arabic_default), key="bulk_run_btn"):
                     ok_count = 0
                     fail_count = 0
                     for cid in selected_bulk_ids:
@@ -2289,7 +2286,7 @@ elif selected_nav in {"incoming", "queues"}:
                 bi("سبب الإظهار", "Reveal reason", arabic_default),
                 key="reveal_reason",
             )
-            if st.button(ui("إظهار الحالة المحددة", "Reveal Selected Case", arabic_default), width="stretch"):
+            if st.button(bi("إظهار الحالة المحددة", "Reveal Selected Case", arabic_default), width="stretch"):
                 if not reveal_reason.strip():
                     st.warning(bi("السبب مطلوب قبل الإظهار.", "Reason is required before reveal.", arabic_default))
                 elif not require_active_action("reveal_pii", "pii_reveal", case_id=str(selected_case["case_id"])):
@@ -2390,7 +2387,7 @@ elif selected_nav == "review":
         st.markdown(f"#### {bi('أحدث التجاوزات', 'Recent Overrides', arabic_default)}")
         st.dataframe(recent_overrides, width="stretch", hide_index=True)
         st.download_button(
-            label=ui("تصدير CSV للمراجعة", "Export Review CSV", arabic_default),
+            label=bi("تصدير CSV للمراجعة", "Export Review CSV", arabic_default),
             data=cases_to_csv_bytes([*escalations, *low_confidence], arabic_default),
             file_name="review_filtered_export.csv",
             mime="text/csv",
@@ -2422,7 +2419,7 @@ elif selected_nav == "review":
                 value="review_action",
             )
 
-            if st.button(ui("تنفيذ الإجراء", "Run Action", arabic_default), type="primary"):
+            if st.button(bi("تنفيذ الإجراء", "Run Action", arabic_default), type="primary"):
                 action_ok = False
                 action_msg = ""
                 if require_active_action("review_actions", "review_action", case_id=target_case_id):
@@ -2643,7 +2640,7 @@ elif selected_nav == "assistant":
                     st.warning(bi(f"مشكلة في المفتاح: {key_error}", f"API key issue: {key_error}", arabic_default))
 
                 test_cols = st.columns([1.4, 3.6])
-                if test_cols[0].button(ui("اختبار AI", "Test AI", arabic_default), key="ai_runtime_test_btn"):
+                if test_cols[0].button(bi("اختبار AI", "Test AI", arabic_default), key="ai_runtime_test_btn"):
                     if not effective_key:
                         st.session_state["ai_runtime_test_result"] = {
                             "ok": False,
@@ -2709,7 +2706,7 @@ elif selected_nav == "assistant":
                 else 0,
                 key="rag_department_hint_input",
             )
-            ask_clicked = q_cols[3].button(ui("استرجاع", "Retrieve", arabic_default), key="rag_ask_btn")
+            ask_clicked = q_cols[3].button(bi("استرجاع", "Retrieve", arabic_default), key="rag_ask_btn")
 
         if ask_clicked:
             query_text = str(st.session_state.get("rag_query", "")).strip()
@@ -2976,7 +2973,7 @@ elif selected_nav == "notifications":
             can_ack = role in {"supervisor", "auditor"}
             if can_ack and not notif.get("ack_at_utc"):
                 if st.button(
-                    ui("تأكيد التنبيه", "Acknowledge", arabic_default),
+                    bi("تأكيد التنبيه", "Acknowledge", arabic_default),
                     key=f'notify_ack_{notif["notification_id"]}',
                 ):
                     if require_active_action("audit_export", "notification_ack", case_id=str(notif.get("case_id") or "")):
@@ -3104,7 +3101,7 @@ elif selected_nav == "help":
                     max_value=5,
                     value=4,
                 )
-                feedback_submit = st.form_submit_button(ui("إرسال الملاحظة", "Submit Feedback", arabic_default), type="primary")
+                feedback_submit = st.form_submit_button(bi("إرسال الملاحظة", "Submit Feedback", arabic_default), type="primary")
             if feedback_submit:
                 if not feedback_summary.strip():
                     st.error(bi("الملخص مطلوب.", "Summary is required.", arabic_default))
@@ -3290,7 +3287,7 @@ elif selected_nav == "settings":
                     disabled=not can_write_settings or not public_signup_enabled,
                 )
                 save_clicked = st.form_submit_button(
-                    ui("حفظ الإعدادات", "Save Settings", arabic_default),
+                    bi("حفظ الإعدادات", "Save Settings", arabic_default),
                     type="primary",
                     disabled=not can_write_settings,
                 )
@@ -3326,7 +3323,7 @@ elif selected_nav == "settings":
                     st.toast(bi("تم حفظ الإعدادات", "Settings saved", arabic_default))
                     st.rerun()
 
-            if st.button(ui("إعادة الضبط الافتراضي", "Reset Defaults", arabic_default), disabled=not can_write_settings):
+            if st.button(bi("إعادة الضبط الافتراضي", "Reset Defaults", arabic_default), disabled=not can_write_settings):
                 if require_active_action("settings_write", "settings_reset"):
                     st.session_state["ui_sidebar_contrast"] = True
                     st.session_state["ui_compact_mode"] = False
@@ -3373,7 +3370,7 @@ elif selected_nav == "settings":
                             type="password",
                         )
                         password_submit = st.form_submit_button(
-                            ui("تغيير كلمة المرور", "Change Password", arabic_default),
+                            bi("تغيير كلمة المرور", "Change Password", arabic_default),
                             type="primary",
                         )
                     if password_submit:
@@ -3410,7 +3407,7 @@ elif selected_nav == "settings":
                             arabic_default,
                         )
                     )
-                    if st.button(ui("إنشاء سر MFA جديد", "Generate new MFA secret", arabic_default), key="self_generate_totp"):
+                    if st.button(bi("إنشاء سر MFA جديد", "Generate new MFA secret", arabic_default), key="self_generate_totp"):
                         st.session_state[self_totp_state_key] = generate_totp_secret()
                     with st.form("self_service_mfa_form"):
                         self_enable_mfa = st.checkbox(
@@ -3423,7 +3420,7 @@ elif selected_nav == "settings":
                             disabled=not self_enable_mfa,
                         ).strip()
                         mfa_submit = st.form_submit_button(
-                            ui("حفظ إعدادات التحقق بخطوتين", "Save Two-Step Verification", arabic_default),
+                            bi("حفظ إعدادات التحقق بخطوتين", "Save Two-Step Verification", arabic_default),
                             type="primary",
                         )
                     if mfa_submit and require_active_action("view", "self_manage_mfa", case_id=None):
@@ -3544,7 +3541,7 @@ elif selected_nav == "settings":
                             bi("سر TOTP (Base32)", "TOTP secret (Base32)", arabic_default),
                             disabled=not new_mfa_required,
                         ).strip()
-                        create_submit = st.form_submit_button(ui("إنشاء المستخدم", "Create User", arabic_default), type="primary")
+                        create_submit = st.form_submit_button(bi("إنشاء المستخدم", "Create User", arabic_default), type="primary")
                     st.caption(
                         bi(
                             "إذا فعّلت التحقق بخطوتين، شارك سر TOTP مع المستخدم ليضيفه إلى تطبيق المصادقة قبل أول تسجيل دخول.",
@@ -3612,7 +3609,7 @@ elif selected_nav == "settings":
                             )
                         )
                         if st.button(
-                            ui("إنشاء سر TOTP جديد للمستخدم", "Generate new TOTP secret for user", arabic_default),
+                            bi("إنشاء سر TOTP جديد للمستخدم", "Generate new TOTP secret for user", arabic_default),
                             key=f"generate_managed_totp_{managed_user['user_id']}",
                         ):
                             st.session_state[managed_totp_state_key] = generate_totp_secret()
@@ -3651,7 +3648,7 @@ elif selected_nav == "settings":
                             type="password",
                             disabled=not is_local_managed,
                         )
-                        manage_submit = st.form_submit_button(ui("حفظ تغييرات الحساب", "Save Account Changes", arabic_default), type="primary")
+                        manage_submit = st.form_submit_button(bi("حفظ تغييرات الحساب", "Save Account Changes", arabic_default), type="primary")
                     if manage_submit and require_active_action("settings_write", "manage_user"):
                         role_ok, role_msg, _ = set_user_role(conn, str(managed_user["user_id"]), managed_role)
                         status_ok, status_msg, _ = set_user_status(conn, str(managed_user["user_id"]), managed_status)
@@ -3817,7 +3814,7 @@ elif selected_nav == "settings":
         if has_permission("audit_export"):
             content = "\n".join(read_audit_lines())
             st.download_button(
-                label=ui("تصدير سجل التدقيق", "Export Audit Log", arabic_default),
+                label=bi("تصدير سجل التدقيق", "Export Audit Log", arabic_default),
                 data=content,
                 file_name="audit.log.jsonl",
                 mime="application/jsonl",
@@ -3827,21 +3824,21 @@ elif selected_nav == "settings":
                 json.dumps(entry, ensure_ascii=False) for entry in read_feedback_entries()
             )
             st.download_button(
-                label=ui("تصدير سجل الملاحظات", "Export Feedback Log", arabic_default),
+                label=bi("تصدير سجل الملاحظات", "Export Feedback Log", arabic_default),
                 data=feedback_content,
                 file_name="feedback.log.jsonl",
                 mime="application/jsonl",
                 width="stretch",
             )
             st.download_button(
-                label=ui("تصدير الحالات", "Export Cases", arabic_default),
+                label=bi("تصدير الحالات", "Export Cases", arabic_default),
                 data=json.dumps(list_cases(conn), ensure_ascii=False, indent=2),
                 file_name="cases.export.json",
                 mime="application/json",
                 width="stretch",
             )
             st.download_button(
-                label=ui("تصدير أحداث سير العمل", "Export Workflow Events", arabic_default),
+                label=bi("تصدير أحداث سير العمل", "Export Workflow Events", arabic_default),
                 data=json.dumps(list_workflow_events(conn, limit=1000), ensure_ascii=False, indent=2),
                 file_name="workflow_events.export.json",
                 mime="application/json",
@@ -3849,7 +3846,7 @@ elif selected_nav == "settings":
             )
             if DB_PATH.exists():
                 st.download_button(
-                    label=ui("تنزيل نسخة قاعدة البيانات", "Download Database Backup", arabic_default),
+                    label=bi("تنزيل نسخة قاعدة البيانات", "Download Database Backup", arabic_default),
                     data=DB_PATH.read_bytes(),
                     file_name="triage.db",
                     mime="application/octet-stream",

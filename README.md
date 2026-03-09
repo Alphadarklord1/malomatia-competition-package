@@ -11,16 +11,17 @@ Internal pilot prototype for Qatar public-service AI triage operations with:
 - Arabic-first single-language mode toggle (`ar`/`en`)
 - final release controls: public sign-up policy, approval-based self-sign-up, support inbox, release status, and backup/export actions
 
-## Deterministic Startup
+## Quick Start
 
 ```bash
 cd "/path/to/malomatia-competition-package"
+./setup_demo.sh   # creates secrets.toml with working demo credentials
 ./run_prototype.sh
 ```
 
 App URL: `http://localhost:8501`
 
-`run_prototype.sh` always uses the project virtualenv (`.venv`) and pinned Streamlit runtime (`1.54.0`).
+`setup_demo.sh` copies `secrets.example.toml` to `secrets.toml` with pre-generated demo password hashes. `run_prototype.sh` always uses the project virtualenv (`.venv`) and pinned Streamlit runtime (`1.54.0`).
 
 ## Sign-In
 

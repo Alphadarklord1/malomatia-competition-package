@@ -7,7 +7,7 @@ The prototype now includes a **Knowledge Assistant** page that answers operation
 Operators and supervisors need fast, policy-grounded answers while triaging multilingual government cases. Manual lookup across SOPs delays decisions and causes inconsistent routing.
 
 ## Domain-Specific Data
-- Knowledge corpus: `/Users/armankhan/Documents/malomatia-competition-package/domain_knowledge.json`
+- Knowledge corpus: `domain_knowledge.json`
 - Content scope:
   - Immigration urgency rules
   - Licensing and municipal routing policy
@@ -23,8 +23,8 @@ Operators and supervisors need fast, policy-grounded answers while triaging mult
 - **Grounding**: answer always includes retrieved citations (`DOC/CHUNK`)
 
 Implementation:
-- Engine: `/Users/armankhan/Documents/malomatia-competition-package/rag_engine.py`
-- UI integration: `/Users/armankhan/Documents/malomatia-competition-package/gov_triage_dashboard.py` (`Knowledge Assistant` nav)
+- Engine: `rag_engine.py`
+- UI integration: `gov_triage_dashboard.py` (`Knowledge Assistant` nav)
 
 ## LLM Limitation Controls
 - Answers are constrained to retrieved chunks.
@@ -38,4 +38,4 @@ Implementation:
 
 ## Validation Evidence
 - Smoke validation includes RAG checks (`domain_knowledge.json` exists, index builds with chunks).
-- Automated tests include retrieval/index behavior in `/Users/armankhan/Documents/malomatia-competition-package/tests/test_rag_engine.py`.
+- Automated tests include retrieval/index behavior in `tests/test_rag_engine.py`.

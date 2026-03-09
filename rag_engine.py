@@ -374,7 +374,7 @@ def retrieve(
     if not query:
         return []
 
-    index = build_index(str(data_path), language)
+    index = _build_index_cached(str(data_path), language)
     query_tokens = tokenize(query)
     if not query_tokens:
         return []
@@ -506,8 +506,8 @@ def build_knowledge_manifest(data_path: Path, manifest_path: Path) -> dict[str, 
     manifest = _load_manifest(manifest_path)
     documents = {str(item.get("document_id")): item for item in manifest.get("documents", []) if isinstance(item, dict)}
 
-    ar_index = build_index(str(data_path), "ar")
-    en_index = build_index(str(data_path), "en")
+    ar_index = _build_index_cached(str(data_path), "ar")
+    en_index = _build_index_cached(str(data_path), "en")
     ar_counts = Counter(str(chunk["doc_id"]) for chunk in ar_index["chunks"])
     en_counts = Counter(str(chunk["doc_id"]) for chunk in en_index["chunks"])
 

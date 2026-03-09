@@ -161,21 +161,11 @@ def _infer_legacy_schema_version(conn: sqlite3.Connection) -> int:
     return 1
 
 
-def _ensure_case_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: str) -> None:
-    if not _column_exists(conn, "cases", column_name):
-        conn.execute(f"ALTER TABLE cases ADD COLUMN {_quote_identifier(column_name)} {_validate_ddl_suffix(ddl_suffix)}")
-
-
-def _ensure_event_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: str) -> None:
-    if not _column_exists(conn, "workflow_events", column_name):
+def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, ddl_suffix: str) -> None:
+    if not _column_exists(conn, table_name, column_name):
         conn.execute(
-            f"ALTER TABLE workflow_events ADD COLUMN {_quote_identifier(column_name)} {_validate_ddl_suffix(ddl_suffix)}"
+            f"ALTER TABLE {_quote_identifier(table_name)} ADD COLUMN {_quote_identifier(column_name)} {_validate_ddl_suffix(ddl_suffix)}"
         )
-
-
-def _ensure_user_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: str) -> None:
-    if not _column_exists(conn, "users", column_name):
-        conn.execute(f"ALTER TABLE users ADD COLUMN {_quote_identifier(column_name)} {_validate_ddl_suffix(ddl_suffix)}")
 
 
 def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
@@ -188,14 +178,14 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
 
         if next_version == 2:
             with conn:
-                _ensure_case_column(conn, "state", "TEXT NOT NULL DEFAULT 'NEW'")
-                _ensure_case_column(conn, "assigned_team", "TEXT")
-                _ensure_case_column(conn, "assigned_user", "TEXT")
-                _ensure_case_column(conn, "triaged_at_utc", "TEXT")
-                _ensure_case_column(conn, "assigned_at_utc", "TEXT")
-                _ensure_case_column(conn, "resolved_at_utc", "TEXT")
-                _ensure_case_column(conn, "closed_at_utc", "TEXT")
-                _ensure_case_column(conn, "updated_at_utc", "TEXT NOT NULL DEFAULT ''")
+                _ensure_column(conn, "cases", "state", "TEXT NOT NULL DEFAULT 'NEW'")
+                _ensure_column(conn, "cases", "assigned_team", "TEXT")
+                _ensure_column(conn, "cases", "assigned_user", "TEXT")
+                _ensure_column(conn, "cases", "triaged_at_utc", "TEXT")
+                _ensure_column(conn, "cases", "assigned_at_utc", "TEXT")
+                _ensure_column(conn, "cases", "resolved_at_utc", "TEXT")
+                _ensure_column(conn, "cases", "closed_at_utc", "TEXT")
+                _ensure_column(conn, "cases", "updated_at_utc", "TEXT NOT NULL DEFAULT ''")
 
                 now_iso = to_utc_iso(utc_now())
                 conn.execute(
@@ -210,7 +200,7 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
 
         if next_version == 3:
             with conn:
-                _ensure_event_column(conn, "meta_json", "TEXT NOT NULL DEFAULT '{}'")
+                _ensure_column(conn, "workflow_events", "meta_json", "TEXT NOT NULL DEFAULT '{}'")
                 conn.execute("UPDATE workflow_events SET meta_json = COALESCE(NULLIF(meta_json, ''), '{}')")
 
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_events_case_id ON workflow_events(case_id)")
@@ -286,15 +276,15 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
 
         if next_version == 6:
             with conn:
-                _ensure_user_column(conn, "auth_provider", "TEXT NOT NULL DEFAULT 'local'")
+                _ensure_column(conn, "users", "auth_provider", "TEXT NOT NULL DEFAULT 'local'")
                 conn.execute("UPDATE users SET auth_provider = COALESCE(NULLIF(auth_provider, ''), 'local')")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_users_provider ON users(auth_provider)")
 
         if next_version == 7:
             with conn:
-                _ensure_user_column(conn, "mfa_required", "INTEGER NOT NULL DEFAULT 0")
-                _ensure_user_column(conn, "mfa_type", "TEXT NOT NULL DEFAULT 'none'")
-                _ensure_user_column(conn, "totp_secret", "TEXT")
+                _ensure_column(conn, "users", "mfa_required", "INTEGER NOT NULL DEFAULT 0")
+                _ensure_column(conn, "users", "mfa_type", "TEXT NOT NULL DEFAULT 'none'")
+                _ensure_column(conn, "users", "totp_secret", "TEXT")
                 conn.execute("UPDATE users SET mfa_required = COALESCE(mfa_required, 0)")
                 conn.execute(
                     """
@@ -685,13 +675,12 @@ def override_case(
     actor_role: str,
     reason: str | None = None,
 ) -> tuple[bool, str, dict[str, Any] | None]:
-    if actor_role != "supervisor":
-        case = get_case(conn, case_id)
-        return False, "Only supervisor can override", case
-
     case = get_case(conn, case_id)
     if not case:
         return False, "Case not found", None
+
+    if actor_role != "supervisor":
+        return False, "Only supervisor can override", case
 
     from_state = str(case["state"])
     to_state = "ESCALATED"

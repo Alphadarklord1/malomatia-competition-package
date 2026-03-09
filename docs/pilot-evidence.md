@@ -14,20 +14,20 @@ Observed output:
 Running smoke validation...
 PASS: smoke validation checks completed
 Running pytest suite...
-................................                                         [100%]
-32 passed in 0.13s
+..................................                                       [100%]
+34 passed in 0.39s
 ```
 
 ## Acceptance Checklist (Pass/Fail)
 
 | Check | Status | Evidence |
 |---|---|---|
-| One-command local startup | PASS | `/Users/armankhan/Documents/malomatia-competition-package/run_prototype.sh` |
+| One-command local startup | PASS | `run_prototype.sh` |
 | Auth gate active | PASS | Login UI gate before dashboard render |
-| Session/action safety guard | PASS | `require_active_action(...)` guard usage in `/Users/armankhan/Documents/malomatia-competition-package/gov_triage_dashboard.py` |
-| Workflow/RBAC enforcement | PASS | `/Users/armankhan/Documents/malomatia-competition-package/tests/test_workflow.py` |
-| DB contention handled (controlled error) | PASS | lock test in `/Users/armankhan/Documents/malomatia-competition-package/validation_smoke.py` and `/Users/armankhan/Documents/malomatia-competition-package/tests/test_storage.py` |
-| Schema migration idempotent and v7-safe | PASS | `/Users/armankhan/Documents/malomatia-competition-package/tests/test_migrations.py` |
+| Session/action safety guard | PASS | `require_active_action(...)` guard usage in `gov_triage_dashboard.py` |
+| Workflow/RBAC enforcement | PASS | `tests/test_workflow.py` |
+| DB contention handled (controlled error) | PASS | lock test in `validation_smoke.py` and `tests/test_storage.py` |
+| Schema migration idempotent and v7-safe | PASS | `tests/test_migrations.py` |
 | Arabic default + clean single-language toggle | PASS | `ui_language_mode` default and toggle contract checks |
 | Distinct nav pages (incl. Help/Notifications) | PASS | UI contract + rendered nav branches |
 | Search/filter/pagination contracts present | PASS | smoke/UI contract checks + runtime controls |
@@ -35,14 +35,14 @@ Running pytest suite...
 | Account management and managed MFA active | PASS | `storage.py` user-admin functions + Settings UI + storage tests |
 | Session 3 RAG retrieval pipeline active | PASS | `rag_engine.py` + `tests/test_rag_engine.py` + Assistant nav |
 | Knowledge manifest and RAG benchmark evaluation active | PASS | `knowledge_manifest.json` + `rag_eval_set.json` + Assistant eval panel + validation smoke |
-| Final release controls active | PASS | public sign-up policy + approval mode + release status + support inbox + export/backup controls in `/Users/armankhan/Documents/malomatia-competition-package/gov_triage_dashboard.py` |
-| Streamlit cloud packaging ready | PASS | `/Users/armankhan/Documents/malomatia-competition-package/requirements.txt` + `/Users/armankhan/Documents/malomatia-competition-package/DEPLOYMENT.md` + CI smoke workflow |
+| Final release controls active | PASS | public sign-up policy + approval mode + release status + support inbox + export/backup controls in `gov_triage_dashboard.py` |
+| Streamlit cloud packaging ready | PASS | `requirements.txt` + `DEPLOYMENT.md` + CI smoke workflow |
 
 ## Screenshot Contract
 
 Store screenshots under:
 
-- `/Users/armankhan/Documents/malomatia-competition-package/docs/screenshots/`
+- `docs/screenshots/`
 
 Required filenames:
 
