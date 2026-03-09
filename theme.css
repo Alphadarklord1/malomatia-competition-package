@@ -386,6 +386,11 @@ h3 { font-size: 16px; }
     padding-right: 0.8rem !important;
   }
 
+  [data-testid="stSidebar"] {
+    min-width: 82vw !important;
+    max-width: 82vw !important;
+  }
+
   [data-testid="stHorizontalBlock"] {
     flex-wrap: wrap !important;
     gap: 0.75rem !important;
@@ -400,6 +405,11 @@ h3 { font-size: 16px; }
     flex-direction: column;
     align-items: flex-start;
     padding: 12px;
+  }
+
+  .trace-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .brand-wrap,
@@ -426,6 +436,25 @@ h3 { font-size: 16px; }
   .queue-table,
   [data-testid="stDataFrame"] {
     overflow-x: auto !important;
+  }
+
+  [data-testid="stDataFrame"] > div,
+  [data-testid="stDataFrameResizable"] {
+    width: 100% !important;
+    overflow-x: auto !important;
+  }
+
+  [data-testid="stForm"] [data-testid="stHorizontalBlock"],
+  [data-testid="stExpander"] [data-testid="stHorizontalBlock"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  [data-testid="stDownloadButton"] > button,
+  [data-testid="stLinkButton"] > a,
+  [data-testid="stFormSubmitButton"] > button {
+    width: 100% !important;
+    min-width: 100% !important;
   }
 
   [data-testid="stBaseButton-primary"] > button,
@@ -456,6 +485,21 @@ h3 { font-size: 16px; }
     font-size: 12px;
   }
 
+  .top-bar {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .gov-logo {
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
+  }
+
+  .metric-value {
+    font-size: 18px;
+  }
+
   .request-text {
     font-size: 15px;
     line-height: 1.4;
@@ -474,5 +518,9 @@ h3 { font-size: 16px; }
   [data-testid="stTextInput"] input,
   [data-testid="stSelectbox"] [data-baseweb="select"] {
     font-size: 14px !important;
+  }
+
+  [data-testid="stToolbar"] {
+    display: none !important;
   }
 }

@@ -87,3 +87,7 @@ def test_mobile_responsive_theme_contract_present() -> None:
     assert '@media (max-width: 640px)' in theme
     assert '[data-testid="stHorizontalBlock"]' in theme
     assert '[data-testid="column"]' in theme
+    assert '[data-testid="stSidebar"]' in theme
+    assert '[data-testid="stForm"] [data-testid="stHorizontalBlock"]' in theme
+    assert '[data-testid="stDownloadButton"] > button' in theme
+    assert ".trace-row" in theme
