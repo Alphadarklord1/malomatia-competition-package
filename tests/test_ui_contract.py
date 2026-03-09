@@ -4,10 +4,15 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 APP_PATH = BASE_DIR / "gov_triage_dashboard.py"
+THEME_PATH = BASE_DIR / "theme.css"
 
 
 def _source() -> str:
     return APP_PATH.read_text(encoding="utf-8")
+
+
+def _theme() -> str:
+    return THEME_PATH.read_text(encoding="utf-8")
 
 
 def test_single_language_mode_contract_present() -> None:
@@ -58,3 +63,11 @@ def test_rag_assistant_contract_present() -> None:
     assert "from rag_engine import" in source
     assert "Domain RAG Assistant" in source
     assert "rag_query" in source
+
+
+def test_mobile_responsive_theme_contract_present() -> None:
+    theme = _theme()
+    assert "@media (max-width: 900px)" in theme
+    assert '@media (max-width: 640px)' in theme
+    assert '[data-testid="stHorizontalBlock"]' in theme
+    assert '[data-testid="column"]' in theme

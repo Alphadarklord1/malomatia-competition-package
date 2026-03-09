@@ -379,3 +379,100 @@ h3 { font-size: 16px; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+@media (max-width: 900px) {
+  [data-testid="stAppViewBlockContainer"] {
+    padding-left: 0.8rem !important;
+    padding-right: 0.8rem !important;
+  }
+
+  [data-testid="stHorizontalBlock"] {
+    flex-wrap: wrap !important;
+    gap: 0.75rem !important;
+  }
+
+  [data-testid="column"] {
+    min-width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+
+  .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .brand-wrap,
+  .top-meta {
+    width: 100%;
+  }
+
+  .top-meta {
+    gap: 6px;
+  }
+
+  .chip {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .metric-card,
+  .triage-card,
+  .panel {
+    padding: 12px !important;
+  }
+
+  .queue-table,
+  [data-testid="stDataFrame"] {
+    overflow-x: auto !important;
+  }
+
+  [data-testid="stBaseButton-primary"] > button,
+  [data-testid="stBaseButton-secondary"] > button,
+  .stButton > button {
+    min-width: 100% !important;
+    width: 100% !important;
+    white-space: normal !important;
+  }
+}
+
+@media (max-width: 640px) {
+  h1 {
+    font-size: 20px;
+  }
+
+  h2 {
+    font-size: 17px;
+  }
+
+  .system-title {
+    font-size: 18px;
+  }
+
+  .system-sub,
+  .explain,
+  .queue-table {
+    font-size: 12px;
+  }
+
+  .request-text {
+    font-size: 15px;
+    line-height: 1.4;
+  }
+
+  .meta-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .badge {
+    width: 100%;
+    justify-content: center;
+  }
+
+  [data-testid="stTextInput"] input,
+  [data-testid="stSelectbox"] [data-baseweb="select"] {
+    font-size: 14px !important;
+  }
+}

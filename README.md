@@ -46,6 +46,7 @@ Template:
 - `Notifications`: SLA/quality alerts with acknowledge flow
 - `Help`: role matrix, workflow quick guide, privacy/audit notes
 - `Settings`: visual controls + security/privacy controls + audit export
+- Mobile support: responsive stacking for cards, controls, and panels on narrow screens
 
 ## Session 3 RAG Deliverable
 
