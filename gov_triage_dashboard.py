@@ -125,6 +125,7 @@ def canonical_json(obj: Any) -> str:
 def ensure_session_defaults() -> None:
     defaults: dict[str, Any] = {
         "ui_language_mode": "ar",
+        "ui_nav": "dashboard",
         "ui_sidebar_contrast": True,
         "ui_compact_mode": False,
         "ui_confidence_precision": 2,
@@ -1447,12 +1448,12 @@ with st.sidebar:
         ("help", "المساعدة", "Help"),
     ]
     nav_map = {k: bi(ar, en, arabic_default) for k, ar, en in nav_options}
-    selected_nav_label = st.radio(
+    selected_nav = st.radio(
         bi("القائمة", "Navigation", arabic_default),
-        options=list(nav_map.values()),
-        index=0,
+        options=list(nav_map.keys()),
+        format_func=lambda value: nav_map[value],
+        key="ui_nav",
     )
-    selected_nav = {v: k for k, v in nav_map.items()}[selected_nav_label]
 
 direction = "rtl" if arabic_default else "ltr"
 st.markdown(
@@ -1529,6 +1530,17 @@ if selected_nav == "dashboard":
             "Fast operational snapshot of workload, health, and alerts.",
             arabic_default,
         )
+        quick_action_cols = st.columns(4)
+        dashboard_actions = [
+            ("incoming", bi("فتح الطلبات الواردة", "Open Incoming", arabic_default)),
+            ("queues", bi("فتح الطوابير", "Open Queues", arabic_default)),
+            ("review", bi("فتح المراجعة", "Open Review", arabic_default)),
+            ("assistant", bi("فتح المساعد", "Open Assistant", arabic_default)),
+        ]
+        for idx, (target_nav, label) in enumerate(dashboard_actions):
+            if quick_action_cols[idx].button(label, key=f"dashboard_nav_{target_nav}", width="stretch"):
+                st.session_state["ui_nav"] = target_nav
+                st.rerun()
         state_counts: dict[str, int] = {}
         dept_counts: dict[str, int] = {}
         for case in cases:
@@ -2928,101 +2940,111 @@ elif selected_nav == "notifications":
 elif selected_nav == "help":
     with main_col:
         st.markdown(f"### {bi('المساعدة', 'Help & About', arabic_default)}")
-        st.info(
-            bi(
-                "دليل العرض: 1) افتح الطلبات الواردة، 2) اختر حالة عربية، 3) راجع أثر القرار، 4) افتح المساعد المعرفي لتوضيح RAG.",
-                "Demo guide: 1) Open Incoming Requests, 2) select an Arabic case, 3) review decision trace, 4) open Knowledge Assistant to explain the RAG flow.",
-                arabic_default,
-            )
-        )
-        st.markdown(f"#### {bi('بدء سريع للحكام', 'Judge Quick Start', arabic_default)}")
-        st.markdown(
-            "\n".join(
-                [
-                    f"1. {bi('سجل الدخول كمشرف لمشاهدة الإدارة والحوكمة.', 'Sign in as supervisor to view administration and governance.', arabic_default)}",
-                    f"2. {bi('افتح الطلبات الواردة واختر طلباً عربياً عاجلاً.', 'Open Incoming Requests and select an urgent Arabic request.', arabic_default)}",
-                    f"3. {bi('راجع أثر القرار ثم افتح شاشة المراجعة أو الإشعارات.', 'Review the decision trace, then open Review or Notifications.', arabic_default)}",
-                    f"4. {bi('افتح المساعد المعرفي واسأل عن SLA أو سياسة التوجيه.', 'Open the Knowledge Assistant and ask about SLA or routing policy.', arabic_default)}",
-                ]
-            )
-        )
-        st.markdown(f"#### {bi('مصفوفة الأدوار', 'Role Capability Matrix', arabic_default)}")
-        role_rows = [
-            {"role": "operator", "caps": "view/select/approve/assign/transition"},
-            {"role": "supervisor", "caps": "operator + override/settings/review/reveal/export"},
-            {"role": "auditor", "caps": "read-only + audit export"},
-        ]
-        st.dataframe(
+        help_tab_guide, help_tab_roles, help_tab_support = st.tabs(
             [
-                {
-                    bi("الدور", "Role", arabic_default): r["role"],
-                    bi("الصلاحيات", "Capabilities", arabic_default): r["caps"],
-                }
-                for r in role_rows
-            ],
-            width="stretch",
-            hide_index=True,
+                bi("الدليل", "Guide", arabic_default),
+                bi("الأدوار والحوكمة", "Roles & Governance", arabic_default),
+                bi("الدعم", "Support", arabic_default),
+            ]
         )
-        st.markdown(f"#### {bi('دليل سريع لسير الفرز', 'Quick Triage Workflow', arabic_default)}")
-        st.markdown(
-            "\n".join(
-                [
-                    f"1. {bi('افتح الطلبات الواردة وحدد حالة.', 'Open Incoming Requests and select a case.', arabic_default)}",
-                    f"2. {bi('راجع أثر القرار والثقة.', 'Review decision trace and confidence.', arabic_default)}",
-                    f"3. {bi('نفذ اعتماد/تجاوز/إسناد/انتقال حسب الدور.', 'Run approve/override/assign/transition by role.', arabic_default)}",
-                    f"4. {bi('تابع الحالات في شاشة الطوابير والمراجعة.', 'Track cases in Queues and Review pages.', arabic_default)}",
-                ]
-            )
-        )
-        st.markdown(f"#### {bi('الخصوصية والتدقيق', 'Privacy & Audit', arabic_default)}")
-        st.markdown(
-            "\n".join(
-                [
-                    f"- {bi('إخفاء البيانات الحساسة مفعل افتراضياً.', 'PII masking is enabled by default.', arabic_default)}",
-                    f"- {bi('كل الإجراءات الحساسة تسجل في سجل تدقيق.', 'All sensitive actions are written to audit log.', arabic_default)}",
-                    f"- {bi('يمكن للمشرف إظهار البيانات الحساسة مع سبب.', 'Supervisor can reveal sensitive fields with a reason.', arabic_default)}",
-                ]
-            )
-        )
-        st.markdown(f"#### {bi('استكشاف الأخطاء', 'Troubleshooting Shortcuts', arabic_default)}")
-        st.code("./run_validation.sh", language="bash")
-        st.code("./run_prototype.sh", language="bash")
-        st.markdown(f"#### {bi('إبلاغ عن مشكلة أو ملاحظة', 'Report an Issue or Feedback', arabic_default)}")
-        with st.form("beta_feedback_form"):
-            feedback_category = st.selectbox(
-                bi("الفئة", "Category", arabic_default),
-                options=["bug", "ux", "ai", "security", "other"],
-                format_func=lambda v: {
-                    "bug": bi("خطأ", "Bug", arabic_default),
-                    "ux": bi("تجربة الاستخدام", "UX", arabic_default),
-                    "ai": bi("الذكاء الاصطناعي", "AI", arabic_default),
-                    "security": bi("الأمن", "Security", arabic_default),
-                    "other": bi("أخرى", "Other", arabic_default),
-                }[v],
-            )
-            feedback_summary = st.text_input(bi("ملخص قصير", "Short summary", arabic_default))
-            feedback_details = st.text_area(bi("التفاصيل", "Details", arabic_default), height=120)
-            feedback_rating = st.slider(
-                bi("تقييم الجاهزية", "Beta readiness score", arabic_default),
-                min_value=1,
-                max_value=5,
-                value=4,
-            )
-            feedback_submit = st.form_submit_button(ui("إرسال الملاحظة", "Submit Feedback", arabic_default), type="primary")
-        if feedback_submit:
-            if not feedback_summary.strip():
-                st.error(bi("الملخص مطلوب.", "Summary is required.", arabic_default))
-            elif not feedback_details.strip():
-                st.error(bi("التفاصيل مطلوبة.", "Details are required.", arabic_default))
-            else:
-                append_feedback_entry(feedback_category, feedback_summary, feedback_details, int(feedback_rating))
-                append_audit_event(
-                    action="feedback_submit",
-                    result="success",
-                    details={"category": feedback_category, "rating": int(feedback_rating), "summary": feedback_summary[:120]},
+        with help_tab_guide:
+            st.info(
+                bi(
+                    "دليل العرض: 1) افتح الطلبات الواردة، 2) اختر حالة عربية، 3) راجع أثر القرار، 4) افتح المساعد المعرفي لتوضيح RAG.",
+                    "Demo guide: 1) Open Incoming Requests, 2) select an Arabic case, 3) review decision trace, 4) open Knowledge Assistant to explain the RAG flow.",
+                    arabic_default,
                 )
-                st.success(bi("تم حفظ الملاحظة في سجل الدعم المحلي.", "Feedback saved to the local support log.", arabic_default))
-                st.rerun()
+            )
+            st.markdown(f"#### {bi('بدء سريع للحكام', 'Judge Quick Start', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"1. {bi('سجل الدخول كمشرف لمشاهدة الإدارة والحوكمة.', 'Sign in as supervisor to view administration and governance.', arabic_default)}",
+                        f"2. {bi('افتح الطلبات الواردة واختر طلباً عربياً عاجلاً.', 'Open Incoming Requests and select an urgent Arabic request.', arabic_default)}",
+                        f"3. {bi('راجع أثر القرار ثم افتح شاشة المراجعة أو الإشعارات.', 'Review the decision trace, then open Review or Notifications.', arabic_default)}",
+                        f"4. {bi('افتح المساعد المعرفي واسأل عن SLA أو سياسة التوجيه.', 'Open the Knowledge Assistant and ask about SLA or routing policy.', arabic_default)}",
+                    ]
+                )
+            )
+            st.markdown(f"#### {bi('دليل سريع لسير الفرز', 'Quick Triage Workflow', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"1. {bi('افتح الطلبات الواردة وحدد حالة.', 'Open Incoming Requests and select a case.', arabic_default)}",
+                        f"2. {bi('راجع أثر القرار والثقة.', 'Review decision trace and confidence.', arabic_default)}",
+                        f"3. {bi('نفذ اعتماد/تجاوز/إسناد/انتقال حسب الدور.', 'Run approve/override/assign/transition by role.', arabic_default)}",
+                        f"4. {bi('تابع الحالات في شاشة الطوابير والمراجعة.', 'Track cases in Queues and Review pages.', arabic_default)}",
+                    ]
+                )
+            )
+            st.markdown(f"#### {bi('استكشاف الأخطاء', 'Troubleshooting Shortcuts', arabic_default)}")
+            st.code("./run_validation.sh", language="bash")
+            st.code("./run_prototype.sh", language="bash")
+        with help_tab_roles:
+            st.markdown(f"#### {bi('مصفوفة الأدوار', 'Role Capability Matrix', arabic_default)}")
+            role_rows = [
+                {"role": "operator", "caps": "view/select/approve/assign/transition"},
+                {"role": "supervisor", "caps": "operator + override/settings/review/reveal/export"},
+                {"role": "auditor", "caps": "read-only + audit export"},
+            ]
+            st.dataframe(
+                [
+                    {
+                        bi("الدور", "Role", arabic_default): r["role"],
+                        bi("الصلاحيات", "Capabilities", arabic_default): r["caps"],
+                    }
+                    for r in role_rows
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+            st.markdown(f"#### {bi('الخصوصية والتدقيق', 'Privacy & Audit', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"- {bi('إخفاء البيانات الحساسة مفعل افتراضياً.', 'PII masking is enabled by default.', arabic_default)}",
+                        f"- {bi('كل الإجراءات الحساسة تسجل في سجل تدقيق.', 'All sensitive actions are written to audit log.', arabic_default)}",
+                        f"- {bi('يمكن للمشرف إظهار البيانات الحساسة مع سبب.', 'Supervisor can reveal sensitive fields with a reason.', arabic_default)}",
+                    ]
+                )
+            )
+        with help_tab_support:
+            st.markdown(f"#### {bi('إبلاغ عن مشكلة أو ملاحظة', 'Report an Issue or Feedback', arabic_default)}")
+            with st.form("beta_feedback_form"):
+                feedback_category = st.selectbox(
+                    bi("الفئة", "Category", arabic_default),
+                    options=["bug", "ux", "ai", "security", "other"],
+                    format_func=lambda v: {
+                        "bug": bi("خطأ", "Bug", arabic_default),
+                        "ux": bi("تجربة الاستخدام", "UX", arabic_default),
+                        "ai": bi("الذكاء الاصطناعي", "AI", arabic_default),
+                        "security": bi("الأمن", "Security", arabic_default),
+                        "other": bi("أخرى", "Other", arabic_default),
+                    }[v],
+                )
+                feedback_summary = st.text_input(bi("ملخص قصير", "Short summary", arabic_default))
+                feedback_details = st.text_area(bi("التفاصيل", "Details", arabic_default), height=120)
+                feedback_rating = st.slider(
+                    bi("تقييم الجاهزية", "Beta readiness score", arabic_default),
+                    min_value=1,
+                    max_value=5,
+                    value=4,
+                )
+                feedback_submit = st.form_submit_button(ui("إرسال الملاحظة", "Submit Feedback", arabic_default), type="primary")
+            if feedback_submit:
+                if not feedback_summary.strip():
+                    st.error(bi("الملخص مطلوب.", "Summary is required.", arabic_default))
+                elif not feedback_details.strip():
+                    st.error(bi("التفاصيل مطلوبة.", "Details are required.", arabic_default))
+                else:
+                    append_feedback_entry(feedback_category, feedback_summary, feedback_details, int(feedback_rating))
+                    append_audit_event(
+                        action="feedback_submit",
+                        result="success",
+                        details={"category": feedback_category, "rating": int(feedback_rating), "summary": feedback_summary[:120]},
+                    )
+                    st.success(bi("تم حفظ الملاحظة في سجل الدعم المحلي.", "Feedback saved to the local support log.", arabic_default))
+                    st.rerun()
 
     with right_col:
         beta_snapshot = beta_readiness_snapshot(conn)
@@ -3065,6 +3087,13 @@ elif selected_nav == "help":
 elif selected_nav == "settings":
     with main_col:
         st.markdown(f"### {bi('إعدادات النظام', 'System Settings', arabic_default)}")
+        st.caption(
+            bi(
+                "قسّم الاستخدام هنا إلى ثلاث مهام: الإعدادات العامة، حسابك الشخصي، ثم الإدارة والدعم عند الحاجة.",
+                "Use this page in three steps: general settings, your account, then administration/support only when needed.",
+                arabic_default,
+            )
+        )
         queue_options = {
             "all": bi("الكل", "All", arabic_default),
             "Immigration": bi("الهجرة", "Immigration", arabic_default),
@@ -3342,36 +3371,36 @@ elif selected_nav == "settings":
 
         if can_write_settings:
             feedback_entries = read_feedback_entries()
-            st.markdown(f"### {bi('صندوق دعم النسخة النهائية', 'Final Release Support Inbox', arabic_default)}")
-            if feedback_entries:
-                recent_feedback = sorted(
-                    feedback_entries,
-                    key=lambda item: str(item.get("timestamp_utc", "")),
-                    reverse=True,
-                )[:25]
-                st.dataframe(
-                    [
-                        {
-                            bi("الوقت", "Timestamp", arabic_default): row.get("timestamp_utc", "-"),
-                            bi("المستخدم", "User", arabic_default): row.get("user_id", "-"),
-                            bi("الدور", "Role", arabic_default): row.get("role", "-"),
-                            bi("الفئة", "Category", arabic_default): row.get("category", "-"),
-                            bi("التقييم", "Rating", arabic_default): row.get("rating", "-"),
-                            bi("الملخص", "Summary", arabic_default): row.get("summary", "-"),
-                        }
-                        for row in recent_feedback
-                    ],
-                    width="stretch",
-                    hide_index=True,
-                )
-            else:
-                st.caption(
-                    bi(
-                        "لا توجد ملاحظات دعم مسجلة بعد.",
-                        "No support feedback has been submitted yet.",
-                        arabic_default,
+            with st.expander(bi("صندوق دعم النسخة النهائية", "Final Release Support Inbox", arabic_default), expanded=False):
+                if feedback_entries:
+                    recent_feedback = sorted(
+                        feedback_entries,
+                        key=lambda item: str(item.get("timestamp_utc", "")),
+                        reverse=True,
+                    )[:25]
+                    st.dataframe(
+                        [
+                            {
+                                bi("الوقت", "Timestamp", arabic_default): row.get("timestamp_utc", "-"),
+                                bi("المستخدم", "User", arabic_default): row.get("user_id", "-"),
+                                bi("الدور", "Role", arabic_default): row.get("role", "-"),
+                                bi("الفئة", "Category", arabic_default): row.get("category", "-"),
+                                bi("التقييم", "Rating", arabic_default): row.get("rating", "-"),
+                                bi("الملخص", "Summary", arabic_default): row.get("summary", "-"),
+                            }
+                            for row in recent_feedback
+                        ],
+                        width="stretch",
+                        hide_index=True,
                     )
-                )
+                else:
+                    st.caption(
+                        bi(
+                            "لا توجد ملاحظات دعم مسجلة بعد.",
+                            "No support feedback has been submitted yet.",
+                            arabic_default,
+                        )
+                    )
 
         if can_write_settings:
             st.markdown(f"### {bi('إدارة الحسابات', 'Account Administration', arabic_default)}")
@@ -3567,31 +3596,31 @@ elif selected_nav == "settings":
                         st.success(bi("تم حفظ تغييرات الحساب.", "Account changes saved.", arabic_default))
                         st.rerun()
 
-        st.markdown(f"### {bi('دليل المستخدمين', 'User Directory', arabic_default)}")
-        st.dataframe(
-            [
-                {
-                    bi("المعرف", "User ID", arabic_default): u["user_id"],
-                    bi("الاسم", "Display Name", arabic_default): u["display_name"],
-                    bi("الموفر", "Provider", arabic_default): u.get("auth_provider", "local"),
-                    bi("MFA", "MFA", arabic_default): (
-                        "TOTP"
-                        if int(u.get("mfa_required", 0)) == 1 and str(u.get("mfa_type", "none")) == "totp"
-                        else str(u.get("mfa_type", "none"))
-                    ),
-                    bi("الدور", "Role", arabic_default): u["role"],
-                    bi("الحالة", "Status", arabic_default): u["status"],
-                    bi("فشل المحاولات", "Failed Attempts", arabic_default): u["failed_attempts"],
-                    bi("آخر دخول", "Last Login", arabic_default): u["last_login_at_utc"] or "-",
-                }
-                for u in list_users(conn)
-            ],
-            width="stretch",
-            hide_index=True,
-        )
+        with st.expander(bi("دليل المستخدمين", "User Directory", arabic_default), expanded=False):
+            st.dataframe(
+                [
+                    {
+                        bi("المعرف", "User ID", arabic_default): u["user_id"],
+                        bi("الاسم", "Display Name", arabic_default): u["display_name"],
+                        bi("الموفر", "Provider", arabic_default): u.get("auth_provider", "local"),
+                        bi("MFA", "MFA", arabic_default): (
+                            "TOTP"
+                            if int(u.get("mfa_required", 0)) == 1 and str(u.get("mfa_type", "none")) == "totp"
+                            else str(u.get("mfa_type", "none"))
+                        ),
+                        bi("الدور", "Role", arabic_default): u["role"],
+                        bi("الحالة", "Status", arabic_default): u["status"],
+                        bi("فشل المحاولات", "Failed Attempts", arabic_default): u["failed_attempts"],
+                        bi("آخر دخول", "Last Login", arabic_default): u["last_login_at_utc"] or "-",
+                    }
+                    for u in list_users(conn)
+                ],
+                width="stretch",
+                hide_index=True,
+            )
 
-        st.markdown(f"### {bi('سجل أحداث سير العمل', 'Workflow Events', arabic_default)}")
-        st.dataframe(list_workflow_events(conn, limit=100), width="stretch", hide_index=True)
+        with st.expander(bi("سجل أحداث سير العمل", "Workflow Events", arabic_default), expanded=False):
+            st.dataframe(list_workflow_events(conn, limit=100), width="stretch", hide_index=True)
 
     with right_col:
         auth_status = auth_status_snapshot(conn)

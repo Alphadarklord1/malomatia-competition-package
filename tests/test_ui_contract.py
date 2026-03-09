@@ -18,6 +18,7 @@ def _theme() -> str:
 def test_single_language_mode_contract_present() -> None:
     source = _source()
     assert '"ui_language_mode": "ar"' in source
+    assert '"ui_nav": "dashboard"' in source
     assert '"ui_search_query": ""' in source
     assert '"ui_page_size": 10' in source
     assert '"ui_page_index": 0' in source
@@ -105,6 +106,9 @@ def test_real_auth_directory_contract_present() -> None:
 def test_beta_support_contract_present() -> None:
     source = _source()
     assert "Judge Quick Start" in source
+    assert "Guide" in source
+    assert "Roles & Governance" in source
+    assert "Open Incoming" in source
     assert "Report an Issue or Feedback" in source
     assert "Submit Feedback" in source
     assert "Beta Readiness" in source
@@ -116,6 +120,7 @@ def test_beta_support_contract_present() -> None:
     assert "Export Workflow Events" in source
     assert "Download Database Backup" in source
     assert "Final Release Support Inbox" in source
+    assert "Use this page in three steps" in source
 
 
 def test_mobile_responsive_theme_contract_present() -> None:
