@@ -5,11 +5,23 @@ import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import re
 from typing import Any
 
 from workflow import can_transition
 
 CURRENT_SCHEMA_VERSION = 7
+SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+CASE_MUTABLE_COLUMNS = {
+    "state",
+    "assigned_team",
+    "assigned_user",
+    "triaged_at_utc",
+    "assigned_at_utc",
+    "resolved_at_utc",
+    "closed_at_utc",
+    "updated_at_utc",
+}
 
 
 def utc_now() -> datetime:
@@ -42,6 +54,27 @@ def connect_db(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _quote_identifier(identifier: str) -> str:
+    if not SQL_IDENTIFIER_RE.fullmatch(identifier):
+        raise ValueError(f"Unsafe SQL identifier: {identifier}")
+    return f'"{identifier}"'
+
+
+def _validate_ddl_suffix(ddl_suffix: str) -> str:
+    cleaned = ddl_suffix.strip()
+    if not cleaned or any(token in cleaned for token in (";", "--", "/*", "*/")):
+        raise ValueError(f"Unsafe DDL suffix: {ddl_suffix}")
+    return cleaned
+
+
+def _build_case_update_statement(updates: dict[str, Any]) -> tuple[str, list[Any]]:
+    invalid = [key for key in updates if key not in CASE_MUTABLE_COLUMNS]
+    if invalid:
+        raise ValueError(f"Unsafe case update columns: {invalid}")
+    set_clause = ", ".join(f"{_quote_identifier(key)} = ?" for key in updates)
+    return f"UPDATE cases SET {set_clause} WHERE case_id = ?", list(updates.values())
+
+
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
@@ -51,7 +84,7 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
 
 
 def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
-    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    rows = conn.execute(f"PRAGMA table_info({_quote_identifier(table_name)})").fetchall()
     return any(r[1] == column_name for r in rows)
 
 
@@ -130,17 +163,19 @@ def _infer_legacy_schema_version(conn: sqlite3.Connection) -> int:
 
 def _ensure_case_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: str) -> None:
     if not _column_exists(conn, "cases", column_name):
-        conn.execute(f"ALTER TABLE cases ADD COLUMN {column_name} {ddl_suffix}")
+        conn.execute(f"ALTER TABLE cases ADD COLUMN {_quote_identifier(column_name)} {_validate_ddl_suffix(ddl_suffix)}")
 
 
 def _ensure_event_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: str) -> None:
     if not _column_exists(conn, "workflow_events", column_name):
-        conn.execute(f"ALTER TABLE workflow_events ADD COLUMN {column_name} {ddl_suffix}")
+        conn.execute(
+            f"ALTER TABLE workflow_events ADD COLUMN {_quote_identifier(column_name)} {_validate_ddl_suffix(ddl_suffix)}"
+        )
 
 
 def _ensure_user_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: str) -> None:
     if not _column_exists(conn, "users", column_name):
-        conn.execute(f"ALTER TABLE users ADD COLUMN {column_name} {ddl_suffix}")
+        conn.execute(f"ALTER TABLE users ADD COLUMN {_quote_identifier(column_name)} {_validate_ddl_suffix(ddl_suffix)}")
 
 
 def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
@@ -479,12 +514,12 @@ def transition_case_state(
     if to_state == "IN_PROGRESS" and from_state == "CLOSED":
         updates["closed_at_utc"] = None
 
-    set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
-    params = list(updates.values()) + [case_id]
+    update_sql, params = _build_case_update_statement(updates)
+    params.append(case_id)
 
     try:
         with conn:
-            conn.execute(f"UPDATE cases SET {set_clause} WHERE case_id = ?", params)
+            conn.execute(update_sql, params)
             conn.execute(
                 """
                 INSERT INTO workflow_events (
@@ -548,8 +583,8 @@ def assign_case(
     if to_state == "ASSIGNED" and not case.get("assigned_at_utc"):
         updates["assigned_at_utc"] = now_iso
 
-    set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
-    params = list(updates.values()) + [case_id]
+    update_sql, params = _build_case_update_statement(updates)
+    params.append(case_id)
 
     event_type = "ASSIGN" if not case.get("assigned_user") and not case.get("assigned_team") else "REASSIGN"
     if assigned_team == "Human Review":
@@ -557,7 +592,7 @@ def assign_case(
 
     try:
         with conn:
-            conn.execute(f"UPDATE cases SET {set_clause} WHERE case_id = ?", params)
+            conn.execute(update_sql, params)
             conn.execute(
                 """
                 INSERT INTO workflow_events (
@@ -611,12 +646,12 @@ def approve_case(
         if not case.get("triaged_at_utc"):
             updates["triaged_at_utc"] = now_iso
 
-    set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
-    params = list(updates.values()) + [case_id]
+    update_sql, params = _build_case_update_statement(updates)
+    params.append(case_id)
 
     try:
         with conn:
-            conn.execute(f"UPDATE cases SET {set_clause} WHERE case_id = ?", params)
+            conn.execute(update_sql, params)
             conn.execute(
                 """
                 INSERT INTO workflow_events (

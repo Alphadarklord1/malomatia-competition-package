@@ -10,9 +10,11 @@ import os
 import re
 import struct
 import uuid
+from collections import deque
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import streamlit as st
 
@@ -143,6 +145,7 @@ def ensure_session_defaults() -> None:
         "rag_top_k": 5,
         "rag_department_hint": "AUTO",
         "rag_last_result": None,
+        "rag_query_timestamps": [],
         "ai_runtime_api_key": "",
         "ai_runtime_model": "gpt-4o-mini",
         "ai_runtime_embedding_model": "text-embedding-3-small",
@@ -210,11 +213,6 @@ def verify_password(password: str, stored_hash: str) -> bool:
             return False
         derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
         return hmac.compare_digest(derived, expected)
-
-    if stored_hash.startswith("sha256$"):
-        expected_hex = stored_hash.split("$", 1)[1]
-        actual_hex = hashlib.sha256(password.encode("utf-8")).hexdigest()
-        return hmac.compare_digest(actual_hex, expected_hex)
 
     return False
 
@@ -315,8 +313,7 @@ def bi(ar: str, en: str, arabic_default: bool) -> str:
     return ar if arabic_default else en
 
 
-def ui(ar: str, en: str, arabic_default: bool) -> str:
-    return ar if arabic_default else en
+ui = bi
 
 
 def mask_pii(text: str) -> str:
@@ -397,15 +394,25 @@ def badge_html(text: str, kind: str) -> str:
     return f'<span class="badge badge-{kind}">{text}</span>'
 
 
-def read_audit_lines() -> list[str]:
-    if not AUDIT_LOG_PATH.exists():
-        return []
-    return AUDIT_LOG_PATH.read_text(encoding="utf-8").splitlines()
+def iter_jsonl_lines(path: Path) -> Iterator[str]:
+    if not path.exists():
+        return
+    with path.open("r", encoding="utf-8") as file_obj:
+        for raw_line in file_obj:
+            line = raw_line.strip()
+            if line:
+                yield line
+
+
+def read_audit_lines(limit: int | None = None) -> list[str]:
+    if limit is None:
+        return list(iter_jsonl_lines(AUDIT_LOG_PATH))
+    return list(deque(iter_jsonl_lines(AUDIT_LOG_PATH), maxlen=max(0, limit)))
 
 
 def read_audit_events() -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
-    for line in read_audit_lines():
+    for line in iter_jsonl_lines(AUDIT_LOG_PATH):
         if not line.strip():
             continue
         try:
@@ -423,15 +430,16 @@ def compute_event_hash(payload: dict[str, Any], signing_salt: str) -> str:
 
 
 def get_last_event_hash() -> str:
-    for line in reversed(read_audit_lines()):
+    last_hash = "GENESIS"
+    for line in iter_jsonl_lines(AUDIT_LOG_PATH):
         try:
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
         event_hash = str(obj.get("event_hash", "")).strip()
         if event_hash:
-            return event_hash
-    return "GENESIS"
+            last_hash = event_hash
+    return last_hash
 
 
 def append_audit_event(
@@ -473,10 +481,7 @@ def archive_old_audit_events(retention_days: int) -> None:
     old_lines: list[str] = []
     keep_lines: list[str] = []
 
-    for raw_line in read_audit_lines():
-        line = raw_line.strip()
-        if not line:
-            continue
+    for line in iter_jsonl_lines(AUDIT_LOG_PATH):
         try:
             event = json.loads(line)
             ts = parse_utc_iso(str(event.get("timestamp_utc", "")))
@@ -497,15 +502,16 @@ def archive_old_audit_events(retention_days: int) -> None:
 
 
 def validate_audit_chain() -> tuple[bool, str, int]:
-    lines = read_audit_lines()
-    if not lines:
+    line_iter = iter_jsonl_lines(AUDIT_LOG_PATH)
+    first_line = next(line_iter, None)
+    if first_line is None:
         return True, "Audit log empty", 0
 
     signing_salt = get_audit_signing_salt()
     prev_event_hash: str | None = None
     count = 0
 
-    for i, line in enumerate(lines):
+    for i, line in enumerate(chain((first_line,), line_iter)):
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
@@ -537,12 +543,8 @@ def validate_audit_chain() -> tuple[bool, str, int]:
 
 
 def read_feedback_entries() -> list[dict[str, Any]]:
-    if not FEEDBACK_LOG_PATH.exists():
-        return []
     entries: list[dict[str, Any]] = []
-    for line in FEEDBACK_LOG_PATH.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
+    for line in iter_jsonl_lines(FEEDBACK_LOG_PATH):
         try:
             entries.append(json.loads(line))
         except json.JSONDecodeError:
@@ -647,6 +649,7 @@ def clear_auth_state() -> None:
     st.session_state["selected_case_id"] = None
     st.session_state["ui_loaded_default_view_for_user"] = ""
     st.session_state["ai_runtime_api_key"] = ""
+    st.session_state["rag_query_timestamps"] = []
 
 
 def finalize_local_login(conn_obj: Any, user: dict[str, Any], username: str) -> None:
@@ -913,6 +916,9 @@ def login_screen(conn_obj: Any) -> None:
                     render_mutation_error(msg_new, arabic_default=False)
                 else:
                     if created_user and int(created_user.get("mfa_required", 0)) == 1:
+                        st.warning(
+                            "Store this authenticator secret now. It is shown for initial setup and should be treated as sensitive."
+                        )
                         if str(created_user.get("status", "active")) != "active":
                             st.success("Account created and submitted for approval. Keep this authenticator secret; you will need it after a supervisor activates the account.")
                         else:
@@ -1037,11 +1043,29 @@ def require_active_action(permission: str, action: str, case_id: str | None = No
     return require_permission(permission, action, case_id=case_id)
 
 
+def enforce_rag_rate_limit(window_seconds: int = 60, max_queries: int = 8, min_interval_seconds: int = 2) -> tuple[bool, str]:
+    now = utc_now()
+    timestamps = [
+        parse_utc_iso(value)
+        for value in st.session_state.get("rag_query_timestamps", [])
+        if isinstance(value, str)
+    ]
+    recent = [ts for ts in timestamps if (now - ts).total_seconds() <= window_seconds]
+    if recent and (now - recent[-1]).total_seconds() < min_interval_seconds:
+        return False, f"Please wait at least {min_interval_seconds} seconds between assistant queries."
+    if len(recent) >= max_queries:
+        return False, f"Assistant query limit reached ({max_queries} per {window_seconds} seconds). Try again shortly."
+    recent.append(now)
+    st.session_state["rag_query_timestamps"] = [to_utc_iso(ts) for ts in recent]
+    return True, ""
+
+
 def render_auth_config_error() -> None:
     st.error("Authentication is not configured.")
     st.markdown(
-        "Create `/Users/armankhan/Documents/malomatia-competition-package/.streamlit/secrets.toml` "
-        "from `secrets.example.toml`. Users are bootstrapped into the secured local user directory from hashed credentials."
+        f"Create `{(BASE_DIR / '.streamlit' / 'secrets.toml').relative_to(BASE_DIR)}` "
+        f"from `{(BASE_DIR / '.streamlit' / 'secrets.example.toml').relative_to(BASE_DIR)}`. "
+        "Users are bootstrapped into the secured local user directory from hashed credentials."
     )
 
 
@@ -2692,62 +2716,66 @@ elif selected_nav == "assistant":
             if not query_text:
                 st.warning(bi("أدخل سؤالاً أولاً.", "Enter a question first.", arabic_default))
             else:
-                department_hint = str(st.session_state.get("rag_department_hint", "AUTO"))
-                if department_hint == "AUTO":
-                    department_hint = str(selected_case.get("department_en", "")) if selected_case else ""
-                if department_hint == "all":
-                    department_hint = ""
-                openai_api_key = str(st.session_state.get("ai_runtime_api_key", "")).strip() or str(
-                    st.secrets.get("openai_api_key", "")
-                ).strip()
-                openai_model = str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")).strip() or str(
-                    st.secrets.get("openai_model", "gpt-4o-mini")
-                ).strip()
-                openai_embedding_model = str(
-                    st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")
-                ).strip() or str(st.secrets.get("openai_embedding_model", "text-embedding-3-small")).strip()
-                try:
-                    result = answer_question(
-                        query=query_text,
-                        data_path=DOMAIN_KB_PATH,
-                        language="ar" if arabic_default else "en",
-                        top_k=int(st.session_state.get("rag_top_k", 5)),
-                        department_hint=department_hint or None,
-                        openai_api_key=openai_api_key or None,
-                        openai_model=openai_model,
-                        openai_embedding_model=openai_embedding_model,
-                    )
-                    st.session_state["rag_last_result"] = result
-                    query_hash = hashlib.sha256(query_text.encode("utf-8")).hexdigest()[:12]
-                    append_audit_event(
-                        action="rag_query",
-                        result="success",
-                        case_id=str(selected_case.get("case_id", "")),
-                        details={
-                            "query_hash": query_hash,
-                            "hits": len(result.get("hits", [])),
-                            "used_llm": bool(result.get("used_llm")),
-                            "ai_mode": "openai" if openai_api_key else "local",
-                            "answer_model": openai_model if openai_api_key else "local_fallback",
-                            "embedding_model": openai_embedding_model if openai_api_key else "tfidf",
-                            "department_hint": department_hint or "none",
-                            "top_k": int(st.session_state.get("rag_top_k", 5)),
-                        },
-                    )
-                except Exception as exc:  # pragma: no cover - runtime protection
-                    append_audit_event(
-                        action="rag_query",
-                        result="failure",
-                        case_id=str(selected_case.get("case_id", "")),
-                        details={"reason": "runtime_error", "error": str(exc)[:180]},
-                    )
-                    st.error(
-                        bi(
-                            f"تعذر تنفيذ الاسترجاع: {exc}",
-                            f"Retrieval failed: {exc}",
-                            arabic_default,
+                allowed_query, rate_limit_message = enforce_rag_rate_limit()
+                if not allowed_query:
+                    st.warning(bi(f"تم تقييد الطلب: {rate_limit_message}", f"Request throttled: {rate_limit_message}", arabic_default))
+                else:
+                    department_hint = str(st.session_state.get("rag_department_hint", "AUTO"))
+                    if department_hint == "AUTO":
+                        department_hint = str(selected_case.get("department_en", "")) if selected_case else ""
+                    if department_hint == "all":
+                        department_hint = ""
+                    openai_api_key = str(st.session_state.get("ai_runtime_api_key", "")).strip() or str(
+                        st.secrets.get("openai_api_key", "")
+                    ).strip()
+                    openai_model = str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")).strip() or str(
+                        st.secrets.get("openai_model", "gpt-4o-mini")
+                    ).strip()
+                    openai_embedding_model = str(
+                        st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")
+                    ).strip() or str(st.secrets.get("openai_embedding_model", "text-embedding-3-small")).strip()
+                    try:
+                        result = answer_question(
+                            query=query_text,
+                            data_path=DOMAIN_KB_PATH,
+                            language="ar" if arabic_default else "en",
+                            top_k=int(st.session_state.get("rag_top_k", 5)),
+                            department_hint=department_hint or None,
+                            openai_api_key=openai_api_key or None,
+                            openai_model=openai_model,
+                            openai_embedding_model=openai_embedding_model,
                         )
-                    )
+                        st.session_state["rag_last_result"] = result
+                        query_hash = hashlib.sha256(query_text.encode("utf-8")).hexdigest()[:12]
+                        append_audit_event(
+                            action="rag_query",
+                            result="success",
+                            case_id=str(selected_case.get("case_id", "")),
+                            details={
+                                "query_hash": query_hash,
+                                "hits": len(result.get("hits", [])),
+                                "used_llm": bool(result.get("used_llm")),
+                                "ai_mode": "openai" if openai_api_key else "local",
+                                "answer_model": openai_model if openai_api_key else "local_fallback",
+                                "embedding_model": openai_embedding_model if openai_api_key else "tfidf",
+                                "department_hint": department_hint or "none",
+                                "top_k": int(st.session_state.get("rag_top_k", 5)),
+                            },
+                        )
+                    except Exception as exc:  # pragma: no cover - runtime protection
+                        append_audit_event(
+                            action="rag_query",
+                            result="failure",
+                            case_id=str(selected_case.get("case_id", "")),
+                            details={"reason": "runtime_error", "error": str(exc)[:180]},
+                        )
+                        st.error(
+                            bi(
+                                f"تعذر تنفيذ الاسترجاع: {exc}",
+                                f"Retrieval failed: {exc}",
+                                arabic_default,
+                            )
+                        )
 
         result = st.session_state.get("rag_last_result")
         with assistant_results_tab:

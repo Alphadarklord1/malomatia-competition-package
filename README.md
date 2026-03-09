@@ -14,7 +14,7 @@ Internal pilot prototype for Qatar public-service AI triage operations with:
 ## Deterministic Startup
 
 ```bash
-cd "/Users/armankhan/Documents/malomatia-competition-package"
+cd "/path/to/malomatia-competition-package"
 ./run_prototype.sh
 ```
 
@@ -26,7 +26,7 @@ App URL: `http://localhost:8501`
 
 Credentials are loaded from:
 
-- `/Users/armankhan/Documents/malomatia-competition-package/.streamlit/secrets.toml`
+- `.streamlit/secrets.toml`
 
 Local demo users:
 
@@ -37,7 +37,7 @@ Local demo users:
 If login fails, verify `auth_users` exists in secrets file with valid password hashes.
 Template:
 
-- `/Users/armankhan/Documents/malomatia-competition-package/.streamlit/secrets.example.toml`
+- `.streamlit/secrets.example.toml`
 
 Optional auth upgrades:
 
@@ -64,10 +64,10 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 
 ## Session 3 RAG Deliverable
 
-- Domain data source: `/Users/armankhan/Documents/malomatia-competition-package/domain_knowledge.json`
-- Knowledge manifest: `/Users/armankhan/Documents/malomatia-competition-package/knowledge_manifest.json`
-- Evaluation set: `/Users/armankhan/Documents/malomatia-competition-package/rag_eval_set.json`
-- Retrieval engine: `/Users/armankhan/Documents/malomatia-competition-package/rag_engine.py`
+- Domain data source: `domain_knowledge.json`
+- Knowledge manifest: `knowledge_manifest.json`
+- Evaluation set: `rag_eval_set.json`
+- Retrieval engine: `rag_engine.py`
 - Implemented pipeline:
   - chunking (token-window with overlap)
   - TF-IDF vectorization per chunk
@@ -104,7 +104,7 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 
 ## Local vs Cloud Secrets
 
-- Local run reads `/Users/armankhan/Documents/malomatia-competition-package/.streamlit/secrets.toml`
+- Local run reads `.streamlit/secrets.toml`
 - Streamlit Community uses the cloud secrets panel
 - Do not commit secrets; `.streamlit/secrets.toml` is ignored in `.gitignore`
 
@@ -113,14 +113,14 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 Run smoke + tests:
 
 ```bash
-cd "/Users/armankhan/Documents/malomatia-competition-package"
+cd "/path/to/malomatia-competition-package"
 ./run_validation.sh
 ```
 
 Run tests directly:
 
 ```bash
-cd "/Users/armankhan/Documents/malomatia-competition-package"
+cd "/path/to/malomatia-competition-package"
 ./.venv/bin/python -m pytest -q
 ```
 
@@ -137,11 +137,11 @@ Coverage includes:
 ## Migration Verification
 
 ```bash
-cd "/Users/armankhan/Documents/malomatia-competition-package"
+cd "/path/to/malomatia-competition-package"
 ./.venv/bin/python - <<'PY'
 from pathlib import Path
 from storage import connect_db, ensure_schema, get_schema_version
-base = Path('/Users/armankhan/Documents/malomatia-competition-package')
+base = Path('.').resolve()
 conn = connect_db(base / 'triage.db')
 ensure_schema(conn, base / 'schema.sql')
 print('schema_version=', get_schema_version(conn))
@@ -222,4 +222,4 @@ ps aux | rg streamlit
 
 See:
 
-- `/Users/armankhan/Documents/malomatia-competition-package/DEPLOYMENT.md`
+- `DEPLOYMENT.md`

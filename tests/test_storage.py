@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 
 from storage import (
+    _build_case_update_statement,
+    _column_exists,
     bootstrap_auth_users,
     ack_notification,
     approve_case,
@@ -44,6 +46,27 @@ def test_connect_db_sets_reliability_pragmas(tmp_path):
         assert journal_mode == "wal"
         assert synchronous in {1, 2}  # NORMAL may return 1 or 2 depending on SQLite build
         assert foreign_keys == 1
+    finally:
+        conn.close()
+
+
+def test_sql_identifier_helpers_reject_unsafe_input(tmp_path):
+    conn = connect_db(tmp_path / "identifiers.db")
+    try:
+        ensure_schema(conn, SCHEMA_PATH)
+        try:
+            _column_exists(conn, "cases; DROP TABLE cases;--", "state")
+        except ValueError as exc:
+            assert "Unsafe SQL identifier" in str(exc)
+        else:
+            raise AssertionError("Expected _column_exists to reject unsafe table names")
+
+        try:
+            _build_case_update_statement({"state = 'CLOSED'": "bad"})
+        except ValueError as exc:
+            assert "Unsafe case update columns" in str(exc)
+        else:
+            raise AssertionError("Expected case update builder to reject unsafe columns")
     finally:
         conn.close()
 

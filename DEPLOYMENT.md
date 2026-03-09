@@ -110,9 +110,9 @@ Never commit real secrets.
 
 ## 5. Local vs Cloud Secrets Handling
 
-- Local: `/Users/armankhan/Documents/malomatia-competition-package/.streamlit/secrets.toml`
+- Local: `.streamlit/secrets.toml`
 - Cloud: Streamlit secrets panel
-- Shared template: `/Users/armankhan/Documents/malomatia-competition-package/.streamlit/secrets.example.toml`
+- Shared template: `.streamlit/secrets.example.toml`
 
 ## 6. Demo Fallback
 

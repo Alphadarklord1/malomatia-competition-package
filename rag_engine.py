@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import math
 import re
@@ -220,7 +221,7 @@ def _load_manifest(manifest_path: Path) -> dict[str, Any]:
 
 
 @lru_cache(maxsize=8)
-def build_index(data_path_str: str, language: str = "ar", chunk_size: int = 85, overlap: int = 18) -> dict[str, Any]:
+def _build_index_cached(data_path_str: str, language: str = "ar", chunk_size: int = 85, overlap: int = 18) -> dict[str, Any]:
     data_path = Path(data_path_str)
     docs = _load_docs(data_path)
     suffix = _language_suffix(language)
@@ -265,6 +266,10 @@ def build_index(data_path_str: str, language: str = "ar", chunk_size: int = 85, 
         "chunks": chunks,
         "idf": idf,
     }
+
+
+def build_index(data_path_str: str, language: str = "ar", chunk_size: int = 85, overlap: int = 18) -> dict[str, Any]:
+    return copy.deepcopy(_build_index_cached(data_path_str, language, chunk_size, overlap))
 
 
 def _openai_embeddings(

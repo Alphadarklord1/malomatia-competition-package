@@ -29,6 +29,15 @@ def test_build_index_has_chunks_for_both_languages() -> None:
     assert en_index["language"] == "en"
 
 
+def test_build_index_returns_copy_of_cached_data() -> None:
+    first = build_index(str(KB_PATH), "en")
+    original_chunk_id = first["chunks"][0]["chunk_id"]
+    first["chunks"][0]["chunk_id"] = "tampered"
+
+    second = build_index(str(KB_PATH), "en")
+    assert second["chunks"][0]["chunk_id"] == original_chunk_id
+
+
 def test_retrieve_returns_grounded_hits() -> None:
     hits = retrieve(
         query="My residency expires tomorrow. Which queue should handle this?",
