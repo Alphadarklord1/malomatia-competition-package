@@ -119,6 +119,12 @@ This repo now contains a separate true-version starting point so the Streamlit p
 
 These folders are intentionally separate from the Streamlit app. They are the starting point for the real platform, not a replacement that has already reached feature parity.
 
+## Open Source
+
+- License: `LICENSE`
+- Contribution guide: `CONTRIBUTING.md`
+- Collaboration standards: `CODE_OF_CONDUCT.md`
+
 ## Validation and Tests
 
 Run smoke + tests:
