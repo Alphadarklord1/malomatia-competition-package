@@ -1,1 +1,1 @@
-"""Malomatia production API scaffold."""
+"""Malomatia production API MVP."""

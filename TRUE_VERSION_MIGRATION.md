@@ -2,9 +2,9 @@
 
 The Streamlit app remains the competition and demo implementation.
 
-This repo now also contains a production-direction scaffold:
-- `api/` -> FastAPI backend
-- `webapp/` -> Next.js frontend
+This repo now also contains a working core-ops MVP for the true-version path:
+- `api/` -> FastAPI backend MVP
+- `webapp/` -> Next.js frontend MVP
 
 ## Why this split exists
 
@@ -35,9 +35,21 @@ The current Streamlit app is strong enough for prototype, judging, and pilot-sty
 
 ## What still needs implementation in the true version
 
-- production auth and token issuance
+- OIDC / enterprise SSO
 - encrypted MFA secret storage
-- PostgreSQL migrations
+- Alembic-style PostgreSQL migrations
 - background jobs / notifications
-- real frontend data fetching and mutation flows
+- settings/help/notifications/account admin pages in the webapp
+- HTTP-only cookie auth if you move away from sessionStorage
 - CI/CD and container deployment
+
+## What already works in the true-version MVP
+
+- local JWT auth
+- seeded users and cases
+- dashboard KPI summary
+- queue filters and pagination
+- case detail and timeline
+- approve / override mutations with role checks
+- RAG query endpoint with OpenAI-key support and local fallback
+- Next.js frontend wired to the API

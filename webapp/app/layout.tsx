@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
+
+import { AuthProvider } from "../components/auth-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Malomatia Gov Triage Webapp",
-  description: "Production-direction frontend scaffold for the Malomatia Gov-Service Triage platform",
+  description: "Core Ops MVP for the Malomatia Gov-Service Triage platform",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

@@ -1,7 +1,7 @@
 [project]
 name = "malomatia-gov-triage-api"
-version = "0.1.0"
-description = "Production-style API scaffold for the Malomatia Gov-Service Triage platform"
+version = "0.2.0"
+description = "Production-style API for the Malomatia Gov-Service Triage platform"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi==0.118.0",
@@ -10,6 +10,7 @@ dependencies = [
   "psycopg[binary]==3.2.10",
   "pydantic-settings==2.10.1",
   "redis==6.4.0",
+  "PyJWT==2.10.1",
 ]
 
 [project.optional-dependencies]

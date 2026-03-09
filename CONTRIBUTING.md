@@ -5,7 +5,7 @@
 This repository currently contains two tracks:
 
 - Streamlit prototype in the repo root
-- production-direction scaffold in `api/` and `webapp/`
+- real-product MVP in `api/` and `webapp/`
 
 Keep changes scoped to one track unless the change is intentionally shared.
 

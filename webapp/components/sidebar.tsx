@@ -1,28 +1,50 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+
+import { useAuth } from "./auth-provider";
+
 const navItems = [
-  "Dashboard",
-  "Incoming Requests",
-  "Queues",
-  "Review",
-  "Knowledge Assistant",
-  "Notifications",
-  "Settings",
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/queues", label: "Queues" },
+  { href: "/assistant", label: "Knowledge Assistant" },
 ];
 
 export function Sidebar() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { signOut, user } = useAuth();
+
   return (
     <aside className="sidebar">
       <div>
         <div className="eyebrow">Malomatia</div>
         <h1>Gov Triage</h1>
-        <p className="muted">Production-direction React shell for the public-service operations platform.</p>
+        <p className="muted">Core Ops MVP on Next.js + FastAPI.</p>
       </div>
       <nav>
         {navItems.map((item) => (
-          <a key={item} className={item === "Dashboard" ? "nav-link active" : "nav-link"} href="#">
-            {item}
-          </a>
+          <Link key={item.href} className={pathname === item.href ? "nav-link active" : "nav-link"} href={item.href}>
+            {item.label}
+          </Link>
         ))}
       </nav>
+      <div className="sidebar-footer">
+        <div className="muted small">Signed in as</div>
+        <strong>{user?.displayName}</strong>
+        <div className="muted small">{user?.role}</div>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={() => {
+            signOut();
+            router.replace("/login");
+          }}
+        >
+          Sign out
+        </button>
+      </div>
     </aside>
   );
 }

@@ -13,9 +13,12 @@ Observed output:
 ```text
 Running smoke validation...
 PASS: smoke validation checks completed
+Compiling FastAPI product path...
 Running pytest suite...
-..................................                                       [100%]
-34 passed in 0.39s
+...........................................                              [100%]
+43 passed in 1.24s
+Building Next.js webapp...
+Next.js production build completed successfully
 ```
 
 ## Acceptance Checklist (Pass/Fail)

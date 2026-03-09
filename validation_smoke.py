@@ -149,6 +149,16 @@ def main() -> int:
             return fail("knowledge_manifest.json is missing")
         if not rag_eval.exists():
             return fail("rag_eval_set.json is missing")
+        if not (base / "docker-compose.yml").exists():
+            return fail("docker-compose.yml is missing")
+        if not (base / "run_api.sh").exists():
+            return fail("run_api.sh is missing")
+        if not (base / "run_webapp.sh").exists():
+            return fail("run_webapp.sh is missing")
+        api_env_example = (base / "api" / ".env.example").read_text(encoding="utf-8")
+        for snippet in ("MALOMATIA_OPENAI_API_KEY", "MALOMATIA_CORS_ORIGINS"):
+            if snippet not in api_env_example:
+                return fail(f"API env example missing snippet: {snippet}")
         kb_index = build_index(str(kb), "en")
         if len(kb_index.get("chunks", [])) <= 0:
             return fail("RAG knowledge index has no chunks")

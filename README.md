@@ -109,15 +109,38 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 - Streamlit Community uses the cloud secrets panel
 - Do not commit secrets; `.streamlit/secrets.toml` is ignored in `.gitignore`
 
-## Production-Direction Scaffold
+## Real Product MVP
 
-This repo now contains a separate true-version starting point so the Streamlit prototype can remain stable:
+This repo now contains a separate real-product path so the Streamlit prototype can remain stable:
 
-- `api/` -> FastAPI backend scaffold
-- `webapp/` -> Next.js frontend scaffold
+- `api/` -> FastAPI backend MVP
+- `webapp/` -> Next.js frontend MVP
+- `docker-compose.yml` -> local Postgres + Redis runtime
 - `TRUE_VERSION_MIGRATION.md` -> migration phases and architecture notes
 
-These folders are intentionally separate from the Streamlit app. They are the starting point for the real platform, not a replacement that has already reached feature parity.
+These folders are intentionally separate from the Streamlit app. They provide the first working non-Streamlit slice of the platform, not full parity with the prototype.
+
+Run the real product MVP locally:
+
+```bash
+docker compose up -d postgres redis
+./run_api.sh
+./run_webapp.sh
+```
+
+Product URLs:
+
+- API: `http://localhost:8000`
+- Web app: `http://localhost:3000`
+
+Core MVP coverage:
+
+- local JWT login (`/auth/login`, `/auth/me`)
+- KPI summary (`/dashboard/summary`)
+- filterable queue list (`/cases`)
+- case detail + approve/override actions (`/cases/{case_id}`)
+- workflow + audit timeline (`/cases/{case_id}/timeline`)
+- grounded RAG endpoint (`/rag/query`)
 
 ## Open Source
 
@@ -150,6 +173,7 @@ Coverage includes:
 - RAG retrieval/indexing behavior
 - UI contract checks for single-language mode, navigation, pagination, and guarded mutations
 - final release controls for approval-based sign-up, support inbox, release status, and export actions
+- FastAPI real-product API login, queue, workflow, and RAG route behavior
 
 ## Migration Verification
 
@@ -234,6 +258,20 @@ ps aux | rg streamlit
 - RAG behavior:
   - without OpenAI: deterministic grounded retrieval fallback
   - with OpenAI: grounded answer generation using configured key or session-only runtime key
+
+## Real Product Notes
+
+- Backend defaults read from `api/.env`
+- Frontend defaults read from `webapp/.env.local`
+- Demo API users:
+  - `operator_demo` / `Operator@123`
+  - `supervisor_demo` / `Supervisor@123`
+  - `auditor_demo` / `Auditor@123`
+- `run_validation.sh` now validates:
+  - root smoke checks
+  - Python test suite
+  - FastAPI module compilation
+  - Next.js production build when `webapp/node_modules/` is installed
 
 ## Shareable Deployment
 

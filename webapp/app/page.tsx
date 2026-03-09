@@ -1,19 +1,20 @@
-import { Sidebar } from "../components/sidebar";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+import { useAuth } from "../components/auth-provider";
 
 export default function HomePage() {
-  return (
-    <main className="layout">
-      <Sidebar />
-      <section className="content">
-        <section className="hero">
-          <div className="eyebrow">Production Direction</div>
-          <h2>Next.js + FastAPI replacement scaffold</h2>
-          <p className="muted">
-            This path keeps the Streamlit prototype for competition/demo use while introducing the architecture needed for a real
-            multi-user platform: typed APIs, PostgreSQL, service-side auth, and a React frontend.
-          </p>
-        </section>
-      </section>
-    </main>
-  );
+  const { ready, user } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    router.replace(user ? "/dashboard" : "/login");
+  }, [ready, router, user]);
+
+  return <div className="login-shell">Loading...</div>;
 }

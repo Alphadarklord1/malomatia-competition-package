@@ -1,11 +1,13 @@
-import type { CaseRecord } from "../lib/types";
+import Link from "next/link";
 
-export function CaseTable({ cases }: { cases: CaseRecord[] }) {
+import type { CaseSummary } from "../lib/types";
+
+export function CaseTable({ cases }: { cases: CaseSummary[] }) {
   return (
     <div className="panel">
       <div className="panel-header">
         <h2>Operational Queue</h2>
-        <span className="muted">API-backed version should page, filter, and assign from FastAPI.</span>
+        <span className="muted">Live API-backed case list</span>
       </div>
       <table className="table">
         <thead>
@@ -19,13 +21,15 @@ export function CaseTable({ cases }: { cases: CaseRecord[] }) {
         </thead>
         <tbody>
           {cases.map((record) => (
-            <tr key={record.caseId}>
-              <td>{record.caseId}</td>
+            <tr key={record.case_id}>
+              <td>
+                <Link href={`/cases/${record.case_id}`}>{record.case_id}</Link>
+              </td>
               <td>{record.intent}</td>
               <td>{record.urgency}</td>
               <td>{record.department}</td>
               <td>
-                <span className={`pill ${record.slaStatus.toLowerCase()}`}>{record.slaStatus}</span>
+                <span className={`pill ${record.sla_status.toLowerCase()}`}>{record.sla_status}</span>
               </td>
             </tr>
           ))}

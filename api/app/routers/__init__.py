@@ -1,1 +1,1 @@
-"""API routers for the production scaffold."""
+"""API routers for the production MVP."""
