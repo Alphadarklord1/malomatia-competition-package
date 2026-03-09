@@ -83,6 +83,9 @@ def test_real_auth_directory_contract_present() -> None:
     assert "Account Administration" in source
     assert "Encryption & Security Policies" in source
     assert "Verification Code" in source
+    assert "Verify code" in source
+    assert "pending_mfa_user_id" in source
+    assert "Username and password verified. Enter your verification code to continue." in source
     assert "Single Sign-On" in source
     assert "st.login(provider)" in source
     assert "Google or Microsoft MFA is enforced" in source

@@ -153,6 +153,7 @@ def ensure_session_defaults() -> None:
         "auth_role": None,
         "auth_login_at": None,
         "auth_last_activity_at": None,
+        "pending_mfa_user_id": None,
         "selected_case_id": None,
         "ui_loaded_default_view_for_user": "",
         "auth_schema_version": 0,
@@ -543,10 +544,48 @@ def clear_auth_state() -> None:
     st.session_state["auth_role"] = None
     st.session_state["auth_login_at"] = None
     st.session_state["auth_last_activity_at"] = None
+    st.session_state["pending_mfa_user_id"] = None
     st.session_state["revealed_case_ids"] = set()
     st.session_state["selected_case_id"] = None
     st.session_state["ui_loaded_default_view_for_user"] = ""
     st.session_state["ai_runtime_api_key"] = ""
+
+
+def finalize_local_login(conn_obj: Any, user: dict[str, Any], username: str) -> None:
+    login_ok, login_msg, refreshed_user = record_login_success(conn_obj, username.strip())
+    if not login_ok or not refreshed_user:
+        append_audit_event(
+            action="login",
+            result="failure",
+            details={"reason": login_msg},
+            actor_user_id=username,
+            actor_role=str(user.get("role", "unauthenticated")),
+        )
+        st.error("Login failed due to a database error.")
+        return
+
+    now_iso = to_utc_iso(utc_now())
+    st.session_state["auth_user_id"] = username.strip()
+    st.session_state["auth_display_name"] = str(refreshed_user.get("display_name") or username.strip())
+    st.session_state["auth_provider"] = str(refreshed_user.get("auth_provider") or "local")
+    st.session_state["auth_role"] = str(refreshed_user["role"])
+    st.session_state["auth_login_at"] = now_iso
+    st.session_state["auth_last_activity_at"] = now_iso
+    st.session_state["pending_mfa_user_id"] = None
+    st.session_state["revealed_case_ids"] = set()
+
+    append_audit_event(
+        action="login",
+        result="success",
+        details={
+            "reason": "credentials_verified",
+            "display_name": st.session_state["auth_display_name"],
+            "auth_provider": st.session_state["auth_provider"],
+        },
+        actor_user_id=username.strip(),
+        actor_role=str(refreshed_user["role"]),
+    )
+    st.rerun()
 
 
 def login_screen(conn_obj: Any) -> None:
@@ -570,10 +609,53 @@ def login_screen(conn_obj: Any) -> None:
         st.caption("Google or Microsoft MFA is enforced by the identity provider when enabled on that account.")
         st.markdown("---")
 
+    pending_mfa_user_id = str(st.session_state.get("pending_mfa_user_id") or "").strip()
+
+    if pending_mfa_user_id:
+        pending_user = get_user(conn_obj, pending_mfa_user_id)
+        if not pending_user or str(pending_user.get("status", "active")).lower() != "active":
+            st.session_state["pending_mfa_user_id"] = None
+            st.warning("Your pending sign-in session expired. Please sign in again.")
+            st.rerun()
+
+        st.info("Username and password verified. Enter your verification code to continue.")
+        with st.form("mfa_form"):
+            st.text_input("Username", value=pending_mfa_user_id, disabled=True)
+            mfa_code = st.text_input("Verification Code", max_chars=6)
+            verify_submitted = st.form_submit_button("Verify code", type="primary")
+        if st.button("Back to sign in", key="mfa_back_btn"):
+            st.session_state["pending_mfa_user_id"] = None
+            st.rerun()
+
+        if verify_submitted:
+            totp_secret = str(pending_user.get("totp_secret") or "").strip()
+            if not verify_totp_code(totp_secret, mfa_code):
+                fail_ok, fail_msg, fail_state = record_login_failure(
+                    conn_obj,
+                    pending_mfa_user_id,
+                    lockout_after=LOGIN_LOCKOUT_AFTER,
+                    lockout_minutes=LOGIN_LOCKOUT_MINUTES,
+                )
+                append_audit_event(
+                    action="login",
+                    result="denied",
+                    details={
+                        "reason": "invalid_mfa_code",
+                        "failed_attempts": int((fail_state or {}).get("failed_attempts", 0)) if fail_ok else None,
+                        "locked_until_utc": (fail_state or {}).get("locked_until_utc") if fail_ok else None,
+                    },
+                    actor_user_id=pending_mfa_user_id,
+                    actor_role=str(pending_user.get("role", "unauthenticated")),
+                )
+                st.error("Verification code is invalid.")
+                return
+
+            finalize_local_login(conn_obj, pending_user, pending_mfa_user_id)
+        return
+
     with st.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
-        mfa_code = st.text_input("Verification Code", max_chars=6)
         submitted = st.form_submit_button("Sign in", type="primary")
 
     if submitted:
@@ -642,60 +724,22 @@ def login_screen(conn_obj: Any) -> None:
 
         totp_secret = str(user.get("totp_secret") or "").strip()
         mfa_required = int(user.get("mfa_required", 0)) == 1 and str(user.get("mfa_type", "none")) == "totp"
-        if mfa_required and not verify_totp_code(totp_secret, mfa_code):
-            fail_ok, fail_msg, fail_state = record_login_failure(
-                conn_obj,
-                username.strip(),
-                lockout_after=LOGIN_LOCKOUT_AFTER,
-                lockout_minutes=LOGIN_LOCKOUT_MINUTES,
-            )
+        if mfa_required:
+            st.session_state["pending_mfa_user_id"] = username.strip()
             append_audit_event(
-                action="login",
-                result="denied",
+                action="login_mfa_challenge",
+                result="success",
                 details={
-                    "reason": "invalid_mfa_code",
-                    "failed_attempts": int((fail_state or {}).get("failed_attempts", 0)) if fail_ok else None,
-                    "locked_until_utc": (fail_state or {}).get("locked_until_utc") if fail_ok else None,
+                    "reason": "password_verified_mfa_required",
                 },
                 actor_user_id=username.strip(),
-                actor_role=str(user.get("role", "unauthenticated")),
+                actor_role=str(user.get("role", "operator")),
             )
-            st.error("Verification code is invalid.")
+            st.info("Username and password verified. Enter your verification code to continue.")
+            st.rerun()
             return
 
-        login_ok, login_msg, refreshed_user = record_login_success(conn_obj, username.strip())
-        if not login_ok or not refreshed_user:
-            append_audit_event(
-                action="login",
-                result="failure",
-                details={"reason": login_msg},
-                actor_user_id=username,
-                actor_role=str(user.get("role", "unauthenticated")),
-            )
-            st.error("Login failed due to a database error.")
-            return
-
-        now_iso = to_utc_iso(utc_now())
-        st.session_state["auth_user_id"] = username.strip()
-        st.session_state["auth_display_name"] = str(refreshed_user.get("display_name") or username.strip())
-        st.session_state["auth_provider"] = str(refreshed_user.get("auth_provider") or "local")
-        st.session_state["auth_role"] = str(refreshed_user["role"])
-        st.session_state["auth_login_at"] = now_iso
-        st.session_state["auth_last_activity_at"] = now_iso
-        st.session_state["revealed_case_ids"] = set()
-
-        append_audit_event(
-            action="login",
-            result="success",
-            details={
-                "reason": "credentials_verified",
-                "display_name": st.session_state["auth_display_name"],
-                "auth_provider": st.session_state["auth_provider"],
-            },
-            actor_user_id=username.strip(),
-            actor_role=str(refreshed_user["role"]),
-        )
-        st.rerun()
+        finalize_local_login(conn_obj, user, username.strip())
 
 
 def enforce_session_limits() -> bool:
