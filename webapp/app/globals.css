@@ -46,6 +46,8 @@ main.layout {
 .sidebar h1 { margin: 4px 0 8px; }
 .sidebar .muted { color: #d7dee6; }
 .sidebar-footer { display: grid; gap: 8px; }
+.language-toggle { margin-top: 16px; }
+.active-toggle { border-color: var(--primary); color: var(--primary); }
 
 .eyebrow {
   text-transform: uppercase;
@@ -166,6 +168,17 @@ main.layout {
 .muted { color: var(--muted); }
 .error-text { color: var(--urgent); }
 .success-text { color: var(--success); }
+.plain-list {
+  margin: 0;
+  padding-inline-start: 20px;
+  display: grid;
+  gap: 10px;
+}
+.inset-panel {
+  box-shadow: none;
+  border-radius: 12px;
+  padding: 16px;
+}
 
 .panel-header {
   display: flex;
@@ -205,6 +218,23 @@ main.layout {
   align-items: center;
   justify-content: center;
   text-decoration: none;
+}
+
+html[dir="rtl"] body {
+  direction: rtl;
+}
+
+html[dir="rtl"] .table th,
+html[dir="rtl"] .table td,
+html[dir="rtl"] .field,
+html[dir="rtl"] .panel,
+html[dir="rtl"] .hero {
+  text-align: right;
+}
+
+html[dir="rtl"] .actions,
+html[dir="rtl"] .panel-header {
+  flex-direction: row-reverse;
 }
 
 .table {

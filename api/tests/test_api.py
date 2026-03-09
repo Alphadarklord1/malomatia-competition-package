@@ -27,12 +27,65 @@ def test_login_success_and_me(client: TestClient):
     assert profile.status_code == 200, profile.text
     assert profile.json()["role"] == "operator"
     assert profile.json()["auth_provider"] == "local"
+    assert profile.json()["status"] == "active"
 
 
 def test_login_failure(client: TestClient):
     response = client.post("/auth/login", json={"username": "operator_demo", "password": "bad-password"})
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid credentials"
+
+
+def test_register_pending_user_and_supervisor_approval(client: TestClient):
+    register = client.post(
+        "/auth/register",
+        json={"username": "new_operator", "display_name": "New Operator", "password": "NewPassword@123", "enable_mfa": False},
+    )
+    assert register.status_code == 200, register.text
+    assert register.json()["status"] == "pending"
+
+    pending_login = client.post("/auth/login", json={"username": "new_operator", "password": "NewPassword@123"})
+    assert pending_login.status_code == 403
+
+    supervisor_token = login_and_get_token(client, "supervisor_demo", "Supervisor@123")
+    approve = client.patch("/users/new_operator", json={"status": "active"}, headers=auth_headers(supervisor_token))
+    assert approve.status_code == 200, approve.text
+
+    active_login = client.post("/auth/login", json={"username": "new_operator", "password": "NewPassword@123"})
+    assert active_login.status_code == 200, active_login.text
+    assert active_login.json()["access_token"]
+
+
+def test_mfa_login_flow(client: TestClient):
+    from app.security import _hotp, generate_totp_secret
+    from app.db import get_engine
+    from app.models import User
+    from sqlmodel import Session
+
+    secret = generate_totp_secret()
+    with Session(get_engine()) as session:
+        user = session.get(User, "operator_demo")
+        assert user is not None
+        user.mfa_enabled = True
+        user.mfa_secret = secret
+        session.add(user)
+        session.commit()
+
+    first_step = client.post("/auth/login", json={"username": "operator_demo", "password": "Operator@123"})
+    assert first_step.status_code == 200, first_step.text
+    assert first_step.json()["mfa_required"] is True
+    pending_token = first_step.json()["pending_token"]
+    code = _hotp(secret, int(__import__("time").time() // 30))
+    verify = client.post("/auth/mfa/verify", json={"pending_token": pending_token, "code": code})
+    assert verify.status_code == 200, verify.text
+    assert verify.json()["access_token"]
+
+
+def test_login_lockout_after_repeated_failures(client: TestClient):
+    for _ in range(5):
+        client.post("/auth/login", json={"username": "operator_demo", "password": "bad-password"})
+    locked = client.post("/auth/login", json={"username": "operator_demo", "password": "Operator@123"})
+    assert locked.status_code == 423
 
 
 def test_protected_routes_reject_missing_token(client: TestClient):
@@ -77,6 +130,24 @@ def test_operator_can_assign_case(client: TestClient):
     assert payload["assigned_team"] == "Immigration"
     assert payload["assigned_user"] == "ops_imm_1"
     assert payload["state"] in {"ASSIGNED", "TRIAGED"}
+
+
+def test_supervisor_can_transition_case(client: TestClient):
+    token = login_and_get_token(client, "supervisor_demo", "Supervisor@123")
+    case_id = first_case_id(client, token)
+    assign = client.post(
+        f"/cases/{case_id}/assign",
+        json={"assigned_team": "Immigration", "assigned_user": "ops_imm_2", "reason": "assign first"},
+        headers=auth_headers(token),
+    )
+    assert assign.status_code == 200, assign.text
+    transition = client.post(
+        f"/cases/{case_id}/transition",
+        json={"to_state": "IN_PROGRESS", "reason": "work started"},
+        headers=auth_headers(token),
+    )
+    assert transition.status_code == 200, transition.text
+    assert transition.json()["case"]["state"] == "IN_PROGRESS"
 
 
 def test_operator_can_approve_but_cannot_override(client: TestClient):
@@ -145,6 +216,25 @@ def test_review_summary_and_notifications_flow(client: TestClient):
     assert include_acked.status_code == 200, include_acked.text
     acked_items = include_acked.json()["items"]
     assert any(item["notification_id"] == notification_id and item["ack_by_user"] == "supervisor_demo" for item in acked_items)
+
+
+def test_export_routes(client: TestClient):
+    token = login_and_get_token(client, "auditor_demo", "Auditor@123")
+    audit_export = client.get("/audit/export", headers=auth_headers(token))
+    assert audit_export.status_code == 200, audit_export.text
+    assert audit_export.text.strip() != ""
+
+    cases_export = client.get("/cases/export.csv", headers=auth_headers(token))
+    assert cases_export.status_code == 200, cases_export.text
+    assert "case_id,request_text" in cases_export.text
+
+
+def test_supervisor_can_list_users(client: TestClient):
+    token = login_and_get_token(client, "supervisor_demo", "Supervisor@123")
+    response = client.get("/users", headers=auth_headers(token))
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert any(item["user_id"] == "operator_demo" for item in items)
 
 
 def test_rag_route_uses_local_fallback_without_openai_key(client: TestClient):

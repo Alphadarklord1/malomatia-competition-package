@@ -4,15 +4,20 @@ This folder is the working frontend for the real product path.
 
 Implemented:
 - local login against FastAPI
+- optional MFA step after password verification
+- signup flow with supervisor approval
 - dashboard summary cards
 - incoming requests page with approve / assign / override
 - queue list with filters
 - case detail with approve / override actions
 - review page
 - notifications page
+- settings page for exports, self MFA, and supervisor user management
+- help page with role/workflow/privacy guidance
 - RAG assistant wired to the API
 - session-based auth state in the browser
 - mobile-responsive formal government dashboard layout
+- English/Arabic toggle with RTL mode
 
 ## Run
 
@@ -33,6 +38,8 @@ Main routes:
 - `/queues`
 - `/review`
 - `/notifications`
+- `/settings`
+- `/help`
 - `/cases/[caseId]`
 - `/assistant`
 

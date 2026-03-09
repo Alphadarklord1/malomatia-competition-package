@@ -13,6 +13,11 @@ class User(SQLModel, table=True):
     role: str = Field(index=True)
     status: str = Field(default="active", index=True)
     password_hash: str
+    failed_login_attempts: int = Field(default=0)
+    locked_until_utc: Optional[datetime] = None
+    mfa_enabled: bool = Field(default=False, index=True)
+    mfa_secret: Optional[str] = None
+    last_login_at_utc: Optional[datetime] = None
     created_at_utc: datetime
     updated_at_utc: datetime
 

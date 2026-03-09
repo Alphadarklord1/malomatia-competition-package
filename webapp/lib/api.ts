@@ -3,11 +3,15 @@ import type {
   CaseActionResult,
   CaseDetail,
   DashboardSummary,
+  LoginResult,
+  MfaSetupResult,
   NotificationsResponse,
   PaginatedCases,
   RagResponse,
+  RegisterResult,
   ReviewSummary,
   TimelineEvent,
+  UsersResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -38,22 +42,41 @@ async function apiFetch<T>(path: string, init: RequestInit = {}, accessToken?: s
   return (await response.json()) as T;
 }
 
-export async function login(username: string, password: string): Promise<AuthUser> {
-  const token = await apiFetch<{ access_token: string; role: string }>("/auth/login", {
+export async function login(username: string, password: string): Promise<LoginResult> {
+  return apiFetch<LoginResult>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
-  const me = await apiFetch<{ user_id: string; display_name: string; role: string; auth_provider: string }>(
+}
+
+export async function verifyMfa(pendingToken: string, code: string): Promise<LoginResult> {
+  return apiFetch<LoginResult>("/auth/mfa/verify", {
+    method: "POST",
+    body: JSON.stringify({ pending_token: pendingToken, code }),
+  });
+}
+
+export async function register(username: string, displayName: string, password: string, enableMfa: boolean): Promise<RegisterResult> {
+  return apiFetch<RegisterResult>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, display_name: displayName, password, enable_mfa: enableMfa }),
+  });
+}
+
+export async function buildAuthUser(tokenValue: string): Promise<AuthUser> {
+  const me = await apiFetch<{ user_id: string; display_name: string; role: string; auth_provider: string; status: string; mfa_enabled: boolean }>(
     "/auth/me",
     {},
-    token.access_token,
+    tokenValue,
   );
   return {
-    accessToken: token.access_token,
+    accessToken: tokenValue,
     role: me.role,
     userId: me.user_id,
     displayName: me.display_name,
     authProvider: me.auth_provider,
+    status: me.status,
+    mfaEnabled: me.mfa_enabled,
   };
 }
 
@@ -129,6 +152,55 @@ export function fetchNotifications(accessToken: string, includeAcked = false): P
 
 export function acknowledgeNotification(accessToken: string, notificationId: string): Promise<{ message: string }> {
   return apiFetch<{ message: string }>(`/notifications/${notificationId}/ack`, { method: "POST" }, accessToken);
+}
+
+export function fetchUsers(accessToken: string): Promise<UsersResponse> {
+  return apiFetch<UsersResponse>("/users", {}, accessToken);
+}
+
+export function createUser(
+  accessToken: string,
+  payload: { user_id: string; display_name: string; password: string; role: string; status: string; enable_mfa: boolean },
+): Promise<{ user_id: string }> {
+  return apiFetch<{ user_id: string }>("/users", { method: "POST", body: JSON.stringify(payload) }, accessToken);
+}
+
+export function updateUser(
+  accessToken: string,
+  userId: string,
+  payload: { display_name?: string; role?: string; status?: string },
+): Promise<{ user_id: string }> {
+  return apiFetch<{ user_id: string }>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }, accessToken);
+}
+
+export function resetUserPassword(accessToken: string, userId: string, newPassword: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(
+    `/users/${userId}/reset-password`,
+    { method: "POST", body: JSON.stringify({ new_password: newPassword }) },
+    accessToken,
+  );
+}
+
+export function setupUserMfa(accessToken: string, userId: string): Promise<MfaSetupResult> {
+  return apiFetch<MfaSetupResult>(`/users/${userId}/mfa/setup`, { method: "POST" }, accessToken);
+}
+
+export function disableUserMfa(accessToken: string, userId: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/users/${userId}/mfa/disable`, { method: "POST" }, accessToken);
+}
+
+export function exportCasesUrl(params: Record<string, string | number | undefined>): string {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") {
+      qs.set(key, String(value));
+    }
+  });
+  return `${API_BASE_URL}/cases/export.csv?${qs.toString()}`;
+}
+
+export function exportAuditUrl(): string {
+  return `${API_BASE_URL}/audit/export`;
 }
 
 export function queryRag(

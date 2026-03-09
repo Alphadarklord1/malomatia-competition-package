@@ -135,13 +135,19 @@ Product URLs:
 
 Core MVP coverage:
 
-- local JWT login (`/auth/login`, `/auth/me`)
+- local JWT login, pending approval signup, and MFA verification (`/auth/login`, `/auth/register`, `/auth/mfa/verify`, `/auth/me`)
 - KPI summary (`/dashboard/summary`)
 - filterable queue list (`/cases`)
 - incoming triage view with approve/assign/override
 - case detail + approve/override actions (`/cases/{case_id}`)
+- generic state transition endpoint (`/cases/{case_id}/transition`)
+- CSV case export and audit export (`/cases/export.csv`, `/audit/export`)
 - review summary (`/review/summary`)
 - notifications and acknowledge flow (`/notifications`)
+- supervisor user administration (`/users`)
+- webapp Settings and Help pages
+- English/Arabic language toggle with RTL mode in the webapp
+- Alembic migration scaffold for the Postgres path (`api/alembic`)
 - workflow + audit timeline (`/cases/{case_id}/timeline`)
 - grounded RAG endpoint (`/rag/query`)
 
@@ -177,6 +183,7 @@ Coverage includes:
 - UI contract checks for single-language mode, navigation, pagination, and guarded mutations
 - final release controls for approval-based sign-up, support inbox, release status, and export actions
 - FastAPI real-product API login, queue, workflow, and RAG route behavior
+- FastAPI signup, MFA, user-management, export, and transition behavior
 
 ## Migration Verification
 

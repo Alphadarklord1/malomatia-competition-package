@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import PlainTextResponse
 from sqlmodel import Session
 
 from app.db import get_session
@@ -9,6 +10,7 @@ from app.schemas import (
     CaseActionResponse,
     CaseAssignmentRequest,
     CaseDetail,
+    CaseTransitionRequest,
     PaginatedCasesResponse,
     TimelineResponse,
 )
@@ -19,9 +21,11 @@ from app.service import (
     build_timeline,
     case_to_detail,
     case_to_summary,
+    export_cases_csv,
     get_case_or_404,
     list_cases_filtered,
     override_case_action,
+    transition_case_action,
 )
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -54,6 +58,31 @@ def list_cases(
         page=page,
         page_size=page_size,
         total=total,
+    )
+
+
+@router.get("/export.csv", response_class=PlainTextResponse)
+def export_cases(
+    department: str | None = None,
+    state: str | None = None,
+    urgency: str | None = None,
+    assigned_user: str | None = None,
+    search: str | None = None,
+    session: Session = Depends(get_session),
+    _: CurrentUser = Depends(get_current_user),
+) -> PlainTextResponse:
+    csv_text = export_cases_csv(
+        session,
+        department=department,
+        state=state,
+        urgency=urgency,
+        assigned_user=assigned_user,
+        search=search,
+    )
+    return PlainTextResponse(
+        csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="cases-export.csv"'},
     )
 
 
@@ -104,6 +133,17 @@ def override_case(
 ) -> CaseActionResponse:
     case = override_case_action(session, get_case_or_404(session, case_id), current_user, payload.reason)
     return CaseActionResponse(message="Case overridden to Human Review", case=case_to_detail(case))
+
+
+@router.post("/{case_id}/transition", response_model=CaseActionResponse)
+def transition_case(
+    case_id: str,
+    payload: CaseTransitionRequest,
+    session: Session = Depends(get_session),
+    current_user: CurrentUser = Depends(require_roles("operator", "supervisor")),
+) -> CaseActionResponse:
+    case = transition_case_action(session, get_case_or_404(session, case_id), current_user, payload.to_state, payload.reason)
+    return CaseActionResponse(message="Case transitioned", case=case_to_detail(case))
 
 
 @router.get("/{case_id}/timeline", response_model=TimelineResponse)

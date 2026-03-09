@@ -4,6 +4,33 @@ export type AuthUser = {
   userId: string;
   displayName: string;
   authProvider: string;
+  status?: string;
+  mfaEnabled?: boolean;
+};
+
+export type LoginResult = {
+  access_token?: string | null;
+  token_type: string;
+  expires_in: number;
+  role?: string | null;
+  mfa_required: boolean;
+  pending_token?: string | null;
+  message?: string | null;
+};
+
+export type RegisterResult = {
+  user_id: string;
+  status: string;
+  mfa_secret?: string | null;
+  provisioning_uri?: string | null;
+  message: string;
+};
+
+export type MfaSetupResult = {
+  user_id: string;
+  mfa_enabled: boolean;
+  mfa_secret?: string | null;
+  provisioning_uri?: string | null;
 };
 
 export type DashboardSummary = {
@@ -97,6 +124,21 @@ export type ReviewSummary = {
   escalated: ReviewCase[];
   low_confidence: ReviewCase[];
   recently_overridden: ReviewCase[];
+};
+
+export type UserSummary = {
+  user_id: string;
+  display_name: string;
+  role: string;
+  status: string;
+  auth_provider: string;
+  mfa_enabled: boolean;
+  locked_until_utc?: string | null;
+  failed_login_attempts: number;
+};
+
+export type UsersResponse = {
+  items: UserSummary[];
 };
 
 export type NotificationItem = {

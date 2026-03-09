@@ -155,6 +155,12 @@ def main() -> int:
             return fail("run_api.sh is missing")
         if not (base / "run_webapp.sh").exists():
             return fail("run_webapp.sh is missing")
+        if not (base / "api" / "alembic.ini").exists():
+            return fail("api/alembic.ini is missing")
+        if not (base / "webapp" / "app" / "settings" / "page.tsx").exists():
+            return fail("webapp settings page is missing")
+        if not (base / "webapp" / "app" / "help" / "page.tsx").exists():
+            return fail("webapp help page is missing")
         api_env_example = (base / "api" / ".env.example").read_text(encoding="utf-8")
         for snippet in ("MALOMATIA_OPENAI_API_KEY", "MALOMATIA_CORS_ORIGINS"):
             if snippet not in api_env_example:

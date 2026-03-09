@@ -54,6 +54,11 @@ def seed_database(session: Session) -> None:
                     role=item["role"],
                     status="active",
                     password_hash=item["password_hash"],
+                    failed_login_attempts=0,
+                    locked_until_utc=None,
+                    mfa_enabled=False,
+                    mfa_secret=None,
+                    last_login_at_utc=None,
                     created_at_utc=now,
                     updated_at_utc=now,
                 )

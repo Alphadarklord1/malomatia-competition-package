@@ -18,11 +18,34 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class TokenResponse(BaseModel):
-    access_token: str
+class LoginResponse(BaseModel):
+    access_token: Optional[str] = None
     token_type: str = "bearer"
-    expires_in: int
-    role: str
+    expires_in: int = 0
+    role: Optional[str] = None
+    mfa_required: bool = False
+    pending_token: Optional[str] = None
+    message: Optional[str] = None
+
+
+class MfaVerifyRequest(BaseModel):
+    pending_token: str
+    code: str = Field(min_length=6, max_length=6)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=100)
+    display_name: str = Field(min_length=2, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+    enable_mfa: bool = False
+
+
+class RegisterResponse(BaseModel):
+    user_id: str
+    status: str
+    mfa_secret: Optional[str] = None
+    provisioning_uri: Optional[str] = None
+    message: str
 
 
 class UserProfile(BaseModel):
@@ -30,6 +53,8 @@ class UserProfile(BaseModel):
     display_name: str
     role: str
     auth_provider: str
+    status: str
+    mfa_enabled: bool
 
 
 class DashboardSummaryResponse(BaseModel):
@@ -110,6 +135,11 @@ class CaseActionResponse(BaseModel):
     case: CaseDetail
 
 
+class CaseTransitionRequest(BaseModel):
+    to_state: str = Field(min_length=2, max_length=50)
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 class TimelineEvent(BaseModel):
     source: str
     event_type: str
@@ -155,6 +185,47 @@ class NotificationItem(BaseModel):
 
 class NotificationsResponse(BaseModel):
     items: list[NotificationItem]
+
+
+class UserSummary(BaseModel):
+    user_id: str
+    display_name: str
+    role: str
+    status: str
+    auth_provider: str
+    mfa_enabled: bool
+    locked_until_utc: Optional[datetime] = None
+    failed_login_attempts: int
+
+
+class UsersResponse(BaseModel):
+    items: list[UserSummary]
+
+
+class UserCreateRequest(BaseModel):
+    user_id: str = Field(min_length=3, max_length=100)
+    display_name: str = Field(min_length=2, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+    role: str = Field(default="operator")
+    status: str = Field(default="active")
+    enable_mfa: bool = False
+
+
+class UserUpdateRequest(BaseModel):
+    display_name: Optional[str] = Field(default=None, min_length=2, max_length=100)
+    role: Optional[str] = None
+    status: Optional[str] = None
+
+
+class PasswordResetRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class MfaSetupResponse(BaseModel):
+    user_id: str
+    mfa_enabled: bool
+    mfa_secret: Optional[str] = None
+    provisioning_uri: Optional[str] = None
 
 
 class RagQueryRequest(BaseModel):

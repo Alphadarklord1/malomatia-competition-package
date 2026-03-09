@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import uuid
+import csv
+import io
 from datetime import datetime
 from typing import Any
 
@@ -278,6 +280,46 @@ def assign_case_action(
     return case
 
 
+def transition_case_action(session: Session, case: Case, actor: CurrentUser, to_state: str, reason: str | None) -> Case:
+    if not can_transition(actor.role, case.state, to_state):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Transition not allowed")
+    now = utc_now()
+    from_state = case.state
+    case.state = to_state
+    if to_state == "IN_PROGRESS" and case.assigned_at_utc is None:
+        case.assigned_at_utc = now
+    if to_state == "RESOLVED":
+        case.resolved_at_utc = now
+    if to_state == "CLOSED":
+        case.closed_at_utc = now
+    case.updated_at_utc = now
+    session.add(case)
+    _add_workflow_event(
+        session,
+        case_id=case.case_id,
+        actor=actor,
+        event_type="TRANSITION",
+        from_state=from_state,
+        to_state=to_state,
+        reason=reason,
+        meta={"manual": True},
+        timestamp=now,
+    )
+    append_audit_event(
+        session,
+        user_id=actor.user_id,
+        role=actor.role,
+        action="transition",
+        result="success",
+        case_id=case.case_id,
+        details={"from_state": from_state, "to_state": to_state, "reason": reason or ""},
+        timestamp=now,
+    )
+    session.commit()
+    session.refresh(case)
+    return case
+
+
 def dashboard_summary(session: Session) -> dict[str, Any]:
     cases = session.exec(select(Case)).all()
     open_cases = sum(1 for case in cases if case.state != "CLOSED")
@@ -507,3 +549,66 @@ def acknowledge_notification(session: Session, notification_id: str, actor: Curr
         created_at_utc=item.created_at_utc,
         updated_at_utc=item.updated_at_utc,
     )
+
+
+def export_cases_csv(
+    session: Session,
+    *,
+    department: str | None,
+    state: str | None,
+    urgency: str | None,
+    assigned_user: str | None,
+    search: str | None,
+) -> str:
+    items, _ = list_cases_filtered(
+        session,
+        department=department,
+        state=state,
+        urgency=urgency,
+        assigned_user=assigned_user,
+        search=search,
+        page=1,
+        page_size=1000,
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["case_id", "request_text", "intent", "urgency", "department", "state", "assigned_team", "assigned_user", "sla_status"])
+    for case in items:
+        writer.writerow(
+            [
+                case.case_id,
+                case.request_text_en,
+                case.intent_en,
+                case.urgency_en,
+                case.department_en,
+                case.state,
+                case.assigned_team or "",
+                case.assigned_user or "",
+                compute_sla_status(case.sla_deadline_utc),
+            ]
+        )
+    return buffer.getvalue()
+
+
+def export_audit_jsonl(session: Session) -> str:
+    rows = session.exec(select(AuditEvent).order_by(AuditEvent.timestamp_utc.asc(), AuditEvent.event_id.asc())).all()
+    lines = []
+    for row in rows:
+        lines.append(
+            json.dumps(
+                {
+                    "event_id": row.event_id,
+                    "timestamp_utc": row.timestamp_utc.isoformat(),
+                    "user_id": row.user_id,
+                    "role": row.role,
+                    "action": row.action,
+                    "case_id": row.case_id,
+                    "result": row.result,
+                    "details": json.loads(row.details_json or "{}"),
+                    "prev_hash": row.prev_hash,
+                    "event_hash": row.event_hash,
+                },
+                ensure_ascii=False,
+            )
+        )
+    return "\n".join(lines) + ("\n" if lines else "")

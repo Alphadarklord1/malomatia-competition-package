@@ -46,10 +46,16 @@ The current Streamlit app is strong enough for prototype, judging, and pilot-sty
 ## What already works in the true-version MVP
 
 - local JWT auth
+- pending approval signup
+- TOTP MFA verification
 - seeded users and cases
 - dashboard KPI summary
+- settings/help pages
 - queue filters and pagination
+- incoming triage page
 - case detail and timeline
 - approve / override mutations with role checks
+- assignment, transition, notifications, and audit export endpoints
 - RAG query endpoint with OpenAI-key support and local fallback
+- webapp language toggle with RTL mode
 - Next.js frontend wired to the API
