@@ -28,11 +28,13 @@ from storage import (
     ack_notification,
     approve_case,
     assign_case,
+    bootstrap_auth_users,
     compute_sla_state,
     connect_db,
     ensure_schema,
     export_cases_csv_rows,
     get_case,
+    get_user,
     list_case_workflow_events,
     list_cases,
     list_low_confidence,
@@ -40,10 +42,13 @@ from storage import (
     list_pending_escalations,
     list_recent_overrides,
     list_saved_views,
+    list_users,
     list_workflow_events,
     override_case,
     parse_utc_iso,
     record_case_select,
+    record_login_failure,
+    record_login_success,
     seed_cases_if_empty,
     to_utc_iso,
     transition_case_state,
@@ -63,7 +68,9 @@ DB_PATH = BASE_DIR / "triage.db"
 DOMAIN_KB_PATH = BASE_DIR / "domain_knowledge.json"
 AUDIT_LOG_PATH = BASE_DIR / "audit.log.jsonl"
 AUDIT_ARCHIVE_PATH = BASE_DIR / "audit.archive.jsonl"
-AUTH_SCHEMA_VERSION = 5
+AUTH_SCHEMA_VERSION = 6
+LOGIN_LOCKOUT_AFTER = 5
+LOGIN_LOCKOUT_MINUTES = 15
 
 ROLE_PERMISSIONS = {
     "operator": {"view", "select", "approve", "assign", "transition"},
@@ -129,6 +136,7 @@ def ensure_session_defaults() -> None:
         "security_privacy_masking_enabled": True,
         "revealed_case_ids": set(),
         "auth_user_id": None,
+        "auth_display_name": None,
         "auth_role": None,
         "auth_login_at": None,
         "auth_last_activity_at": None,
@@ -148,9 +156,16 @@ def load_auth_users() -> dict[str, dict[str, str]]:
         payload = as_plain_dict(raw_payload)
         role = str(payload.get("role", "")).strip().lower()
         password_hash = str(payload.get("password_hash", "")).strip()
+        display_name = str(payload.get("display_name", "")).strip() or str(username).strip().replace("_", " ").title()
+        status = str(payload.get("status", "active")).strip().lower() or "active"
         if role not in ROLE_PERMISSIONS or not password_hash:
             continue
-        users[str(username).strip()] = {"role": role, "password_hash": password_hash}
+        users[str(username).strip()] = {
+            "role": role,
+            "password_hash": password_hash,
+            "display_name": display_name,
+            "status": status,
+        }
     return users
 
 
@@ -427,6 +442,7 @@ def clear_auth_state() -> None:
         if key.startswith(("assign_btn_", "transition_btn_", "approve_", "override_", "select_")):
             st.session_state.pop(key, None)
     st.session_state["auth_user_id"] = None
+    st.session_state["auth_display_name"] = None
     st.session_state["auth_role"] = None
     st.session_state["auth_login_at"] = None
     st.session_state["auth_last_activity_at"] = None
@@ -436,10 +452,11 @@ def clear_auth_state() -> None:
     st.session_state["ai_runtime_api_key"] = ""
 
 
-def login_screen(auth_users: dict[str, dict[str, str]]) -> None:
+def login_screen(conn_obj: Any) -> None:
     st.markdown("## Sign In Required")
     st.caption("Government AI Triage System")
-    st.caption("Use credentials from .streamlit/secrets.toml")
+    st.caption("Authentication is verified against the secured local user directory.")
+    st.caption("Passwords are stored as hashes, login failures are rate-limited, and sessions are audited.")
 
     with st.form("login_form"):
         username = st.text_input("Username")
@@ -447,7 +464,7 @@ def login_screen(auth_users: dict[str, dict[str, str]]) -> None:
         submitted = st.form_submit_button("Sign in", type="primary")
 
     if submitted:
-        user = auth_users.get(username)
+        user = get_user(conn_obj, username.strip())
         if not user:
             append_audit_event(
                 action="login",
@@ -459,20 +476,73 @@ def login_screen(auth_users: dict[str, dict[str, str]]) -> None:
             st.error("Invalid credentials")
             return
 
-        if not verify_password(password, user["password_hash"]):
+        if str(user.get("status", "active")).lower() != "active":
             append_audit_event(
                 action="login",
                 result="denied",
-                details={"reason": "invalid_password"},
+                details={"reason": "inactive_user"},
+                actor_user_id=username,
+                actor_role=str(user.get("role", "unauthenticated")),
+            )
+            st.error("Account is inactive.")
+            return
+
+        locked_until_raw = str(user.get("locked_until_utc") or "").strip()
+        if locked_until_raw:
+            locked_until = parse_utc_iso(locked_until_raw)
+            if utc_now() < locked_until:
+                append_audit_event(
+                    action="login",
+                    result="denied",
+                    details={"reason": "account_locked", "locked_until_utc": locked_until_raw},
+                    actor_user_id=username,
+                    actor_role=str(user.get("role", "unauthenticated")),
+                )
+                st.error(f"Account is temporarily locked until {locked_until_raw}.")
+                return
+
+        if not verify_password(password, user["password_hash"]):
+            fail_ok, fail_msg, fail_state = record_login_failure(
+                conn_obj,
+                username.strip(),
+                lockout_after=LOGIN_LOCKOUT_AFTER,
+                lockout_minutes=LOGIN_LOCKOUT_MINUTES,
+            )
+            append_audit_event(
+                action="login",
+                result="denied",
+                details={
+                    "reason": "invalid_password",
+                    "failed_attempts": int((fail_state or {}).get("failed_attempts", 0)) if fail_ok else None,
+                    "locked_until_utc": (fail_state or {}).get("locked_until_utc") if fail_ok else None,
+                },
                 actor_user_id=username,
                 actor_role="unauthenticated",
             )
-            st.error("Invalid credentials")
+            if fail_ok and fail_state and fail_state.get("locked_until_utc"):
+                st.error(f"Invalid credentials. Account locked until {fail_state['locked_until_utc']}.")
+            elif fail_msg.startswith("DB_"):
+                st.error("Login failed due to a database error.")
+            else:
+                st.error("Invalid credentials")
+            return
+
+        login_ok, login_msg, refreshed_user = record_login_success(conn_obj, username.strip())
+        if not login_ok or not refreshed_user:
+            append_audit_event(
+                action="login",
+                result="failure",
+                details={"reason": login_msg},
+                actor_user_id=username,
+                actor_role=str(user.get("role", "unauthenticated")),
+            )
+            st.error("Login failed due to a database error.")
             return
 
         now_iso = to_utc_iso(utc_now())
-        st.session_state["auth_user_id"] = username
-        st.session_state["auth_role"] = user["role"]
+        st.session_state["auth_user_id"] = username.strip()
+        st.session_state["auth_display_name"] = str(refreshed_user.get("display_name") or username.strip())
+        st.session_state["auth_role"] = str(refreshed_user["role"])
         st.session_state["auth_login_at"] = now_iso
         st.session_state["auth_last_activity_at"] = now_iso
         st.session_state["revealed_case_ids"] = set()
@@ -480,9 +550,9 @@ def login_screen(auth_users: dict[str, dict[str, str]]) -> None:
         append_audit_event(
             action="login",
             result="success",
-            details={"reason": "credentials_verified"},
-            actor_user_id=username,
-            actor_role=user["role"],
+            details={"reason": "credentials_verified", "display_name": st.session_state["auth_display_name"]},
+            actor_user_id=username.strip(),
+            actor_role=str(refreshed_user["role"]),
         )
         st.rerun()
 
@@ -493,6 +563,19 @@ def enforce_session_limits() -> bool:
     login_at_raw = st.session_state.get("auth_login_at")
     last_activity_raw = st.session_state.get("auth_last_activity_at")
     if not user_id or not role or not login_at_raw or not last_activity_raw:
+        return False
+
+    db_user = get_user(conn, str(user_id))
+    if not db_user or str(db_user.get("status", "active")).lower() != "active":
+        append_audit_event(
+            action="session_invalidated",
+            result="success",
+            details={"reason": "user_missing_or_inactive"},
+            actor_user_id=str(user_id),
+            actor_role=str(role),
+        )
+        clear_auth_state()
+        st.warning("Session was invalidated. Please sign in again.")
         return False
 
     now = utc_now()
@@ -591,7 +674,7 @@ def render_auth_config_error() -> None:
     st.error("Authentication is not configured.")
     st.markdown(
         "Create `/Users/armankhan/Documents/malomatia-competition-package/.streamlit/secrets.toml` "
-        "from `secrets.example.toml` and add hashed passwords."
+        "from `secrets.example.toml`. Users are bootstrapped into the secured local user directory from hashed credentials."
     )
 
 
@@ -844,12 +927,18 @@ seed_cases_if_empty(conn, DATA_PATH)
 archive_old_audit_events(int(st.session_state["security_audit_retention_days"]))
 
 auth_users = load_auth_users()
-if not auth_users:
+if auth_users:
+    bootstrap_ok, bootstrap_msg = bootstrap_auth_users(conn, auth_users)
+    if not bootstrap_ok:
+        st.error(f"Authentication bootstrap failed: {bootstrap_msg}")
+        st.stop()
+
+if not list_users(conn):
     render_auth_config_error()
     st.stop()
 
 if not st.session_state.get("auth_user_id"):
-    login_screen(auth_users)
+    login_screen(conn)
     st.stop()
 
 if not enforce_session_limits():
@@ -870,6 +959,7 @@ if not selected_case:
 
 role = str(st.session_state["auth_role"])
 current_user = str(st.session_state["auth_user_id"])
+display_name = str(st.session_state.get("auth_display_name") or current_user)
 audit_events_all = read_audit_events()
 refresh_notifications(conn, cases, audit_events_all)
 
@@ -895,8 +985,8 @@ with st.sidebar:
 
     st.caption(
         bi(
-            f"المستخدم: {current_user} | الدور: {role}",
-            f"User: {current_user} | Role: {role}",
+            f"المستخدم: {display_name} | المعرف: {current_user} | الدور: {role}",
+            f"User: {display_name} | ID: {current_user} | Role: {role}",
             arabic_default,
         )
     )
@@ -951,7 +1041,8 @@ with header_cols[0]:
       </div>
       <div class="top-meta">
         <span class="chip">{bi("اللغة", "Language", arabic_default)}: {("العربية" if arabic_default else "English")}</span>
-        <span class="chip">{bi("المستخدم", "User", arabic_default)}: {current_user}</span>
+        <span class="chip">{bi("المستخدم", "User", arabic_default)}: {display_name}</span>
+        <span class="chip">{bi("المعرف", "User ID", arabic_default)}: {current_user}</span>
         <span class="chip">{bi("الدور", "Role", arabic_default)}: {role}</span>
       </div>
     </div>
@@ -2492,6 +2583,23 @@ elif selected_nav == "settings":
                 append_audit_event(action="settings_reset", result="success", details={"reason": "user_requested"})
                 st.rerun()
 
+        st.markdown(f"### {bi('دليل المستخدمين', 'User Directory', arabic_default)}")
+        st.dataframe(
+            [
+                {
+                    bi("المعرف", "User ID", arabic_default): u["user_id"],
+                    bi("الاسم", "Display Name", arabic_default): u["display_name"],
+                    bi("الدور", "Role", arabic_default): u["role"],
+                    bi("الحالة", "Status", arabic_default): u["status"],
+                    bi("فشل المحاولات", "Failed Attempts", arabic_default): u["failed_attempts"],
+                    bi("آخر دخول", "Last Login", arabic_default): u["last_login_at_utc"] or "-",
+                }
+                for u in list_users(conn)
+            ],
+            width="stretch",
+            hide_index=True,
+        )
+
         st.markdown(f"### {bi('سجل أحداث سير العمل', 'Workflow Events', arabic_default)}")
         st.dataframe(list_workflow_events(conn, limit=100), width="stretch", hide_index=True)
 
@@ -2508,6 +2616,19 @@ elif selected_nav == "settings":
                     f"- {bi('رسالة التحقق', 'Validation message', arabic_default)}: {chain_message}",
                     f"- {bi('عدد أحداث التدقيق', 'Audit events', arabic_default)}: {chain_count}",
                     f"- {bi('الاحتفاظ', 'Retention', arabic_default)}: {st.session_state['security_audit_retention_days']} {bi('يوم', 'days', arabic_default)}",
+                ]
+            )
+        )
+
+        st.markdown(f"### {bi('سياسات التشفير والأمن', 'Encryption & Security Policies', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- {bi('كلمات المرور لا تحفظ كنص خام، بل كـ PBKDF2 hashes.', 'Passwords are never stored in plaintext; PBKDF2 hashes are stored instead.', arabic_default)}",
+                    f"- {bi('بعد 5 محاولات فاشلة يتم قفل الحساب 15 دقيقة.', 'After 5 failed attempts, the account is locked for 15 minutes.', arabic_default)}",
+                    f"- {bi('الجلسات تنتهي بالخمول وبحد أقصى زمني.', 'Sessions expire on idle timeout and maximum duration.', arabic_default)}",
+                    f"- {bi('كل عمليات الدخول والخروج والإعدادات تسجل في التدقيق.', 'All login, logout, and settings events are audit logged.', arabic_default)}",
+                    f"- {bi('البيانات الحساسة تبقى مخفية افتراضياً ولا يكشفها النظام تلقائياً.', 'Sensitive data remains masked by default and is never auto-revealed.', arabic_default)}",
                 ]
             )
         )

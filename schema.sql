@@ -74,6 +74,20 @@ CREATE TABLE IF NOT EXISTS notifications (
   updated_at_utc TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  user_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until_utc TEXT,
+  password_changed_at_utc TEXT NOT NULL,
+  last_login_at_utc TEXT,
+  created_at_utc TEXT NOT NULL,
+  updated_at_utc TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_cases_state ON cases(state);
 CREATE INDEX IF NOT EXISTS idx_cases_department ON cases(department_en);
 CREATE INDEX IF NOT EXISTS idx_cases_assigned_user ON cases(assigned_user);
@@ -91,3 +105,6 @@ CREATE INDEX IF NOT EXISTS idx_notifications_case ON notifications(case_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_ack ON notifications(ack_at_utc);
 CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at_utc);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_unique_key ON notifications(type, case_id);
+
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);

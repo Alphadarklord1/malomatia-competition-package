@@ -67,6 +67,15 @@ def test_rag_assistant_contract_present() -> None:
     assert "What It Cannot Do" in source
 
 
+def test_real_auth_directory_contract_present() -> None:
+    source = _source()
+    assert "bootstrap_auth_users" in source
+    assert "record_login_failure" in source
+    assert "record_login_success" in source
+    assert "User Directory" in source
+    assert "Encryption & Security Policies" in source
+
+
 def test_mobile_responsive_theme_contract_present() -> None:
     theme = _theme()
     assert "@media (max-width: 900px)" in theme

@@ -3,6 +3,7 @@
 Internal pilot prototype for Qatar public-service AI triage operations with:
 
 - authentication + RBAC + session safety
+- persisted user directory with hashed passwords and lockout policy
 - privacy masking + audit chain logging
 - SQLite persistence + schema migrations
 - workflow lifecycle + SLA monitoring

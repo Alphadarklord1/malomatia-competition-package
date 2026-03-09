@@ -4,14 +4,19 @@ import sqlite3
 from pathlib import Path
 
 from storage import (
+    bootstrap_auth_users,
     ack_notification,
     approve_case,
     connect_db,
     delete_saved_view,
     ensure_schema,
     export_cases_csv_rows,
+    get_user,
     list_notifications,
     list_saved_views,
+    list_users,
+    record_login_failure,
+    record_login_success,
     seed_cases_if_empty,
     upsert_notification,
     upsert_saved_view,
@@ -157,5 +162,46 @@ def test_export_cases_csv_rows_returns_labeled_rows(tmp_path):
         assert "Case ID" in csv_rows[0]
         assert "Request" in csv_rows[0]
         assert "SLA" in csv_rows[0]
+    finally:
+        conn.close()
+
+
+def test_auth_user_bootstrap_and_login_tracking(tmp_path):
+    conn = connect_db(tmp_path / "auth_users.db")
+    try:
+        ensure_schema(conn, SCHEMA_PATH)
+        ok, msg = bootstrap_auth_users(
+            conn,
+            {
+                "operator_demo": {
+                    "display_name": "Operator Demo",
+                    "role": "operator",
+                    "password_hash": "pbkdf2_sha256$210000$abc$def",
+                    "status": "active",
+                }
+            },
+        )
+        assert ok, msg
+        users = list_users(conn)
+        assert len(users) == 1
+        assert users[0]["display_name"] == "Operator Demo"
+
+        ok, msg, user = record_login_failure(conn, "operator_demo", lockout_after=2, lockout_minutes=15)
+        assert ok, msg
+        assert user is not None
+        assert int(user["failed_attempts"]) == 1
+
+        ok, msg, user = record_login_failure(conn, "operator_demo", lockout_after=2, lockout_minutes=15)
+        assert ok, msg
+        assert user is not None
+        assert int(user["failed_attempts"]) == 2
+        assert user["locked_until_utc"] is not None
+
+        ok, msg, user = record_login_success(conn, "operator_demo")
+        assert ok, msg
+        assert user is not None
+        assert int(user["failed_attempts"]) == 0
+        assert user["locked_until_utc"] is None
+        assert get_user(conn, "operator_demo") is not None
     finally:
         conn.close()

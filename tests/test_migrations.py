@@ -116,6 +116,9 @@ def test_migrates_legacy_schema_to_current(tmp_path):
         assert conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='notifications'"
         ).fetchone()
+        assert conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
 
         count = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
         state = conn.execute("SELECT state FROM cases WHERE case_id = 'legacy-1'").fetchone()[0]

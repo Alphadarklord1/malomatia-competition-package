@@ -9,7 +9,7 @@ from typing import Any
 
 from workflow import can_transition
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 def utc_now() -> datetime:
@@ -94,6 +94,9 @@ def _infer_legacy_schema_version(conn: sqlite3.Connection) -> int:
 
     has_saved_views = _table_exists(conn, "saved_views")
     has_notifications = _table_exists(conn, "notifications")
+    has_users = _table_exists(conn, "users")
+    if has_saved_views and has_notifications and has_users:
+        return 5
     if has_saved_views and has_notifications:
         return 4
 
@@ -206,6 +209,28 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_ack ON notifications(ack_at_utc)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at_utc)")
                 conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_unique_key ON notifications(type, case_id)")
+
+        if next_version == 5:
+            with conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                      user_id TEXT PRIMARY KEY,
+                      display_name TEXT NOT NULL,
+                      role TEXT NOT NULL,
+                      password_hash TEXT NOT NULL,
+                      status TEXT NOT NULL DEFAULT 'active',
+                      failed_attempts INTEGER NOT NULL DEFAULT 0,
+                      locked_until_utc TEXT,
+                      password_changed_at_utc TEXT NOT NULL,
+                      last_login_at_utc TEXT,
+                      created_at_utc TEXT NOT NULL,
+                      updated_at_utc TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)")
 
         version = next_version
 
@@ -719,6 +744,137 @@ def list_saved_views(conn: sqlite3.Connection, user_id: str) -> list[dict[str, A
         (user_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_users(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT user_id, display_name, role, status, failed_attempts, locked_until_utc,
+               password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
+        FROM users
+        ORDER BY display_name ASC, user_id ASC
+        """
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT user_id, display_name, role, password_hash, status, failed_attempts, locked_until_utc,
+               password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
+        FROM users
+        WHERE user_id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def bootstrap_auth_users(conn: sqlite3.Connection, auth_users: dict[str, dict[str, Any]]) -> tuple[bool, str]:
+    now_iso = to_utc_iso(utc_now())
+    try:
+        with conn:
+            for user_id, payload in auth_users.items():
+                role = str(payload.get("role", "")).strip().lower()
+                password_hash = str(payload.get("password_hash", "")).strip()
+                display_name = str(payload.get("display_name", "")).strip() or user_id.replace("_", " ").title()
+                status = str(payload.get("status", "active")).strip().lower() or "active"
+                if not role or not password_hash:
+                    continue
+
+                existing = conn.execute(
+                    "SELECT user_id, password_changed_at_utc, created_at_utc FROM users WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+                if existing:
+                    password_changed_at_utc = (
+                        now_iso
+                        if password_hash != conn.execute(
+                            "SELECT password_hash FROM users WHERE user_id = ?",
+                            (user_id,),
+                        ).fetchone()[0]
+                        else existing["password_changed_at_utc"]
+                    )
+                    conn.execute(
+                        """
+                        UPDATE users
+                        SET display_name = ?, role = ?, password_hash = ?, status = ?, password_changed_at_utc = ?, updated_at_utc = ?
+                        WHERE user_id = ?
+                        """,
+                        (display_name, role, password_hash, status, password_changed_at_utc, now_iso, user_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO users (
+                          user_id, display_name, role, password_hash, status, failed_attempts,
+                          locked_until_utc, password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)
+                        """,
+                        (user_id, display_name, role, password_hash, status, now_iso, now_iso, now_iso),
+                    )
+        return True, "ok"
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc)
+
+
+def record_login_failure(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    lockout_after: int = 5,
+    lockout_minutes: int = 15,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    try:
+        with conn:
+            row = conn.execute(
+                """
+                SELECT user_id, display_name, role, password_hash, status, failed_attempts, locked_until_utc,
+                       password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            if not row:
+                return False, "User not found", None
+
+            failed_attempts = int(row["failed_attempts"]) + 1
+            locked_until_utc = row["locked_until_utc"]
+            if failed_attempts >= max(1, lockout_after):
+                locked_until_utc = to_utc_iso(utc_now() + timedelta(minutes=max(1, lockout_minutes)))
+            conn.execute(
+                """
+                UPDATE users
+                SET failed_attempts = ?, locked_until_utc = ?, updated_at_utc = ?
+                WHERE user_id = ?
+                """,
+                (failed_attempts, locked_until_utc, to_utc_iso(utc_now()), user_id),
+            )
+        return True, "ok", get_user(conn, user_id)
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc), None
+
+
+def record_login_success(conn: sqlite3.Connection, user_id: str) -> tuple[bool, str, dict[str, Any] | None]:
+    now_iso = to_utc_iso(utc_now())
+    try:
+        with conn:
+            row = conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not row:
+                return False, "User not found", None
+            conn.execute(
+                """
+                UPDATE users
+                SET failed_attempts = 0, locked_until_utc = NULL, last_login_at_utc = ?, updated_at_utc = ?
+                WHERE user_id = ?
+                """,
+                (now_iso, now_iso, user_id),
+            )
+        return True, "ok", get_user(conn, user_id)
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc), None
 
 
 def upsert_saved_view(
