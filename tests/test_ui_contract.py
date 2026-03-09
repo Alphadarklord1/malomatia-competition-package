@@ -87,8 +87,15 @@ def test_real_auth_directory_contract_present() -> None:
     assert "pending_mfa_user_id" in source
     assert "Username and password verified. Enter your verification code to continue." in source
     assert "Single Sign-On" in source
+    assert "Google and Microsoft sign-in will appear here when OIDC is configured for this deployment." in source
     assert "st.login(provider)" in source
     assert "Google or Microsoft MFA is enforced" in source
+    assert "Create Account" in source
+    assert "Create account" in source
+    assert "Enable two-step verification (TOTP)" in source
+    assert "Two-Step Verification" in source
+    assert "Save Two-Step Verification" in source
+    assert "Generate new MFA secret" in source
 
 
 def test_mobile_responsive_theme_contract_present() -> None:

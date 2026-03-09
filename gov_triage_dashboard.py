@@ -222,6 +222,10 @@ def hash_password_pbkdf2(password: str, iterations: int = 210000) -> str:
     )
 
 
+def generate_totp_secret() -> str:
+    return base64.b32encode(os.urandom(20)).decode("utf-8")
+
+
 def _normalize_totp_secret(secret: str) -> str:
     return "".join(secret.strip().split()).upper()
 
@@ -608,6 +612,10 @@ def login_screen(conn_obj: Any) -> None:
 
         st.caption("Google or Microsoft MFA is enforced by the identity provider when enabled on that account.")
         st.markdown("---")
+    else:
+        st.markdown("### Single Sign-On")
+        st.caption("Google and Microsoft sign-in will appear here when OIDC is configured for this deployment.")
+        st.markdown("---")
 
     pending_mfa_user_id = str(st.session_state.get("pending_mfa_user_id") or "").strip()
 
@@ -740,6 +748,68 @@ def login_screen(conn_obj: Any) -> None:
             return
 
         finalize_local_login(conn_obj, user, username.strip())
+
+    st.markdown("---")
+    with st.expander("Create Account"):
+        st.caption("Create a local operator account. Google and Microsoft sign-in depend on external provider setup.")
+        with st.form("create_account_form"):
+            signup_user_id = st.text_input("New username")
+            signup_display_name = st.text_input("Display name")
+            signup_password = st.text_input("New password", type="password")
+            signup_confirm_password = st.text_input("Confirm password", type="password")
+            signup_enable_mfa = st.checkbox("Enable two-step verification (TOTP)")
+            signup_totp_secret = st.text_input(
+                "Authenticator secret (Base32)",
+                value=generate_totp_secret() if signup_enable_mfa else "",
+                disabled=not signup_enable_mfa,
+            )
+            signup_submitted = st.form_submit_button("Create account", type="primary")
+
+        if signup_submitted:
+            new_user_id = signup_user_id.strip()
+            display_name = signup_display_name.strip() or new_user_id.replace("_", " ").title()
+            password_value = signup_password.strip()
+            confirm_value = signup_confirm_password.strip()
+            totp_secret = _normalize_totp_secret(signup_totp_secret) if signup_enable_mfa else ""
+
+            if not new_user_id or not re.fullmatch(r"[A-Za-z0-9_.@-]{3,64}", new_user_id):
+                st.error("Username must be 3-64 characters and use letters, numbers, dot, underscore, @, or hyphen.")
+            elif len(password_value) < 8:
+                st.error("Password must be at least 8 characters.")
+            elif password_value != confirm_value:
+                st.error("Password confirmation does not match.")
+            elif signup_enable_mfa and len(totp_secret) < 16:
+                st.error("Enter a valid Base32 authenticator secret.")
+            else:
+                ok_new, msg_new, created_user = create_local_user(
+                    conn_obj,
+                    user_id=new_user_id,
+                    display_name=display_name,
+                    role="operator",
+                    password_hash=hash_password_pbkdf2(password_value),
+                    status="active",
+                    mfa_required=signup_enable_mfa,
+                    totp_secret=totp_secret or None,
+                )
+                append_audit_event(
+                    action="self_signup",
+                    result="success" if ok_new else ("failure" if str(msg_new).startswith("DB_") else "denied"),
+                    actor_user_id=new_user_id,
+                    actor_role="operator",
+                    details={
+                        "display_name": display_name,
+                        "mfa_required": bool(signup_enable_mfa),
+                        "reason": msg_new if not ok_new else "local_account_created",
+                    },
+                )
+                if not ok_new:
+                    render_mutation_error(msg_new, arabic_default=False)
+                else:
+                    if created_user and int(created_user.get("mfa_required", 0)) == 1:
+                        st.success("Account created. Sign in with your username and password, then enter the verification code from your authenticator app.")
+                        st.code(str(created_user.get("totp_secret") or ""), language=None)
+                    else:
+                        st.success("Account created. You can sign in now.")
 
 
 def enforce_session_limits() -> bool:
@@ -2921,6 +2991,9 @@ elif selected_nav == "settings":
         current_user_record = get_user(conn, current_user)
         st.markdown(f"### {bi('حسابي', 'My Account', arabic_default)}")
         if current_user_record:
+            self_totp_state_key = f"self_totp_secret_{current_user}"
+            if self_totp_state_key not in st.session_state:
+                st.session_state[self_totp_state_key] = str(current_user_record.get("totp_secret") or "") or generate_totp_secret()
             user_mfa_state = (
                 bi("TOTP مفعل", "TOTP enabled", arabic_default)
                 if int(current_user_record.get("mfa_required", 0)) == 1 and str(current_user_record.get("mfa_type", "none")) == "totp"
@@ -2984,6 +3057,73 @@ elif selected_nav == "settings":
                                 details={"reason": msg_pw},
                             )
                             render_mutation_error(msg_pw, arabic_default)
+                st.markdown(f"#### {bi('التحقق بخطوتين', 'Two-Step Verification', arabic_default)}")
+                st.caption(
+                    bi(
+                        "فعّل TOTP لاستخدام تطبيق مصادقة بعد كلمة المرور. إذا عطّلتها سيبقى تسجيل الدخول بكلمة المرور فقط.",
+                        "Enable TOTP to require an authenticator-app code after your password. If you disable it, login stays password-only.",
+                        arabic_default,
+                    )
+                )
+                if st.button(ui("إنشاء سر MFA جديد", "Generate new MFA secret", arabic_default), key="self_generate_totp"):
+                    st.session_state[self_totp_state_key] = generate_totp_secret()
+                with st.form("self_service_mfa_form"):
+                    self_enable_mfa = st.checkbox(
+                        bi("تفعيل التحقق بخطوتين", "Enable two-step verification", arabic_default),
+                        value=bool(int(current_user_record.get("mfa_required", 0))),
+                    )
+                    self_totp_secret = st.text_input(
+                        bi("سر تطبيق المصادقة (Base32)", "Authenticator app secret (Base32)", arabic_default),
+                        value=str(st.session_state.get(self_totp_state_key, "")),
+                        disabled=not self_enable_mfa,
+                    ).strip()
+                    mfa_submit = st.form_submit_button(
+                        ui("حفظ إعدادات التحقق بخطوتين", "Save Two-Step Verification", arabic_default),
+                        type="primary",
+                    )
+                if mfa_submit and require_active_action("view", "self_manage_mfa", case_id=None):
+                    normalized_self_totp = _normalize_totp_secret(self_totp_secret) if self_enable_mfa else None
+                    if self_enable_mfa and (not normalized_self_totp or len(normalized_self_totp) < 16):
+                        st.error(
+                            bi(
+                                "أدخل سراً صالحاً لتطبيق المصادقة.",
+                                "Enter a valid authenticator secret.",
+                                arabic_default,
+                            )
+                        )
+                    else:
+                        ok_mfa, msg_mfa, updated_user = set_local_totp_requirement(
+                            conn,
+                            current_user,
+                            mfa_required=self_enable_mfa,
+                            totp_secret=normalized_self_totp,
+                        )
+                        if ok_mfa:
+                            st.session_state[self_totp_state_key] = str((updated_user or {}).get("totp_secret") or st.session_state[self_totp_state_key])
+                            append_audit_event(
+                                action="self_manage_mfa",
+                                result="success",
+                                actor_user_id=current_user,
+                                actor_role=role,
+                                details={"mfa_required": bool(self_enable_mfa)},
+                            )
+                            st.success(
+                                bi(
+                                    "تم تحديث إعدادات التحقق بخطوتين.",
+                                    "Two-step verification settings updated.",
+                                    arabic_default,
+                                )
+                            )
+                            st.rerun()
+                        else:
+                            append_audit_event(
+                                action="self_manage_mfa",
+                                result="failure" if msg_mfa.startswith("DB_") else "denied",
+                                actor_user_id=current_user,
+                                actor_role=role,
+                                details={"reason": msg_mfa},
+                            )
+                            render_mutation_error(msg_mfa, arabic_default)
             else:
                 st.caption(
                     bi(
@@ -3012,6 +3152,13 @@ elif selected_nav == "settings":
                         disabled=not new_mfa_required,
                     ).strip()
                     create_submit = st.form_submit_button(ui("إنشاء المستخدم", "Create User", arabic_default), type="primary")
+                st.caption(
+                    bi(
+                        "إذا فعّلت التحقق بخطوتين، شارك سر TOTP مع المستخدم ليضيفه إلى تطبيق المصادقة قبل أول تسجيل دخول.",
+                        "If you require two-step verification, share the TOTP secret with the user so they can add it to an authenticator app before first login.",
+                        arabic_default,
+                    )
+                )
                 if create_submit:
                     if not new_user_id or not new_display_name:
                         st.error(bi("معرف المستخدم والاسم مطلوبان.", "User ID and display name are required.", arabic_default))
@@ -3058,7 +3205,32 @@ elif selected_nav == "settings":
                     options=list(user_options.keys()),
                 )
                 managed_user = user_options[selected_admin_label]
+                managed_totp_state_key = f"managed_totp_secret_{managed_user['user_id']}"
+                if managed_totp_state_key not in st.session_state:
+                    st.session_state[managed_totp_state_key] = str(managed_user.get("totp_secret") or "") or generate_totp_secret()
                 is_local_managed = str(managed_user.get("auth_provider", "local")) == "local"
+                st.markdown(f"#### {bi('إدارة التحقق بخطوتين', 'Two-Step Verification Management', arabic_default)}")
+                if is_local_managed:
+                    st.caption(
+                        bi(
+                            "يمكنك فرض TOTP أو تعطيله للمستخدم المحلي. بالنسبة لحسابات Google/Microsoft، تتم إدارة MFA من المزود الخارجي.",
+                            "You can require or disable TOTP for local users. For Google/Microsoft accounts, MFA is managed by the external provider.",
+                            arabic_default,
+                        )
+                    )
+                    if st.button(
+                        ui("إنشاء سر TOTP جديد للمستخدم", "Generate new TOTP secret for user", arabic_default),
+                        key=f"generate_managed_totp_{managed_user['user_id']}",
+                    ):
+                        st.session_state[managed_totp_state_key] = generate_totp_secret()
+                else:
+                    st.caption(
+                        bi(
+                            "هذا الحساب يعتمد على Google/Microsoft؛ لا يمكن إدارة TOTP المحلي له من داخل التطبيق.",
+                            "This account uses Google/Microsoft; local TOTP cannot be managed from inside the app.",
+                            arabic_default,
+                        )
+                    )
                 with st.form("manage_user_form"):
                     managed_role = st.selectbox(
                         bi("الدور", "Role", arabic_default),
@@ -3078,7 +3250,7 @@ elif selected_nav == "settings":
                     )
                     managed_totp_secret = st.text_input(
                         bi("سر TOTP (Base32)", "TOTP secret (Base32)", arabic_default),
-                        value=str(managed_user.get("totp_secret") or ""),
+                        value=str(st.session_state.get(managed_totp_state_key, "")),
                         disabled=not is_local_managed or not managed_mfa_required,
                     ).strip()
                     managed_reset_password = st.text_input(
