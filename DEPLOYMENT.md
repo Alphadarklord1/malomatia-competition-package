@@ -28,16 +28,40 @@ Use a production-safe version of `.streamlit/secrets.toml` in the Secrets panel.
 
 ```toml
 [auth_users.operator_demo]
+display_name = "Operator Demo"
 role = "operator"
 password_hash = "pbkdf2_sha256$..."
+totp_secret = "BASE32_TOTP_SECRET"
 
 [auth_users.supervisor_demo]
+display_name = "Supervisor Demo"
 role = "supervisor"
 password_hash = "pbkdf2_sha256$..."
+totp_secret = "BASE32_TOTP_SECRET"
 
 [auth_users.auditor_demo]
+display_name = "Auditor Demo"
 role = "auditor"
 password_hash = "pbkdf2_sha256$..."
+totp_secret = "BASE32_TOTP_SECRET"
+
+[auth]
+redirect_uri = "https://YOUR-APP.streamlit.app/oauth2callback"
+cookie_secret = "replace-with-random-cookie-secret"
+
+[auth.google]
+client_id = "GOOGLE_CLIENT_ID"
+client_secret = "GOOGLE_CLIENT_SECRET"
+server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+
+[auth.microsoft]
+client_id = "MICROSOFT_CLIENT_ID"
+client_secret = "MICROSOFT_CLIENT_SECRET"
+server_metadata_url = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
+
+[oidc_roles]
+supervisors = ["supervisor@example.com"]
+auditors = ["auditor@example.com"]
 
 audit_signing_salt = "replace-with-random-long-string"
 ```
@@ -48,9 +72,12 @@ Never commit real secrets.
 
 1. App boots with no import/runtime errors.
 2. Sign-in page appears.
-3. Test users can log in.
-4. Arabic default mode is active and English toggle works.
-5. Sidebar pages render correctly and distinctly:
+3. Test users can log in with local credentials.
+4. Local users with `totp_secret` are prompted for a valid 6-digit verification code.
+5. Google and Microsoft sign-in buttons appear when OIDC secrets are configured.
+6. OIDC logins create or refresh the matching user record with the correct provider and role.
+7. Arabic default mode is active and English toggle works.
+8. Sidebar pages render correctly and distinctly:
    - Dashboard
    - Incoming Requests
    - Queues
@@ -59,12 +86,12 @@ Never commit real secrets.
    - Notifications
    - Help
    - Settings
-6. Search/filter/pagination controls work on Incoming/Queues/Review.
-7. RAG assistant returns cited results from domain knowledge.
-8. Saved view create/apply/default/delete works.
-9. Notifications show and acknowledge works for supervisor/auditor.
-10. Role restrictions are enforced (operator/auditor cannot run unauthorized writes).
-11. Audit export works for supervisor/auditor.
+9. Search/filter/pagination controls work on Incoming/Queues/Review.
+10. RAG assistant returns cited results from domain knowledge.
+11. Saved view create/apply/default/delete works.
+12. Notifications show and acknowledge works for supervisor/auditor.
+13. Role restrictions are enforced (operator/auditor cannot run unauthorized writes).
+14. Audit export works for supervisor/auditor.
 
 ## 5. Local vs Cloud Secrets Handling
 

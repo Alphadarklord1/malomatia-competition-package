@@ -7,6 +7,7 @@ import hmac
 import io
 import json
 import re
+import struct
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -52,6 +53,7 @@ from storage import (
     seed_cases_if_empty,
     to_utc_iso,
     transition_case_state,
+    upsert_external_user,
     upsert_notification,
     upsert_saved_view,
     delete_saved_view,
@@ -137,6 +139,7 @@ def ensure_session_defaults() -> None:
         "revealed_case_ids": set(),
         "auth_user_id": None,
         "auth_display_name": None,
+        "auth_provider": None,
         "auth_role": None,
         "auth_login_at": None,
         "auth_last_activity_at": None,
@@ -158,6 +161,7 @@ def load_auth_users() -> dict[str, dict[str, str]]:
         password_hash = str(payload.get("password_hash", "")).strip()
         display_name = str(payload.get("display_name", "")).strip() or str(username).strip().replace("_", " ").title()
         status = str(payload.get("status", "active")).strip().lower() or "active"
+        totp_secret = str(payload.get("totp_secret", "")).strip()
         if role not in ROLE_PERMISSIONS or not password_hash:
             continue
         users[str(username).strip()] = {
@@ -165,6 +169,7 @@ def load_auth_users() -> dict[str, dict[str, str]]:
             "password_hash": password_hash,
             "display_name": display_name,
             "status": status,
+            "totp_secret": totp_secret,
         }
     return users
 
@@ -194,6 +199,63 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return hmac.compare_digest(actual_hex, expected_hex)
 
     return False
+
+
+def _normalize_totp_secret(secret: str) -> str:
+    return "".join(secret.strip().split()).upper()
+
+
+def _generate_totp_code(secret: str, for_time: datetime, digits: int = 6, period_seconds: int = 30) -> str:
+    normalized_secret = _normalize_totp_secret(secret)
+    key = base64.b32decode(normalized_secret, casefold=True)
+    counter = int(for_time.timestamp()) // period_seconds
+    msg = struct.pack(">Q", counter)
+    digest = hmac.new(key, msg, hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    binary = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
+    return str(binary % (10**digits)).zfill(digits)
+
+
+def verify_totp_code(secret: str, code: str, window: int = 1) -> bool:
+    normalized = re.sub(r"\D", "", code or "")
+    if len(normalized) != 6:
+        return False
+    now = utc_now()
+    for delta in range(-window, window + 1):
+        candidate_time = now + timedelta(seconds=delta * 30)
+        if hmac.compare_digest(_generate_totp_code(secret, candidate_time), normalized):
+            return True
+    return False
+
+
+def get_oidc_providers() -> list[str]:
+    auth_section = as_plain_dict(st.secrets.get("auth", {}))
+    excluded = {"redirect_uri", "cookie_secret"}
+    providers = [str(key) for key in auth_section.keys() if str(key) not in excluded]
+    return sorted(providers)
+
+
+def normalize_auth_provider(provider_value: str) -> str:
+    raw = provider_value.strip().lower()
+    if not raw:
+        return "oidc"
+    if "google" in raw:
+        return "google"
+    if "microsoft" in raw or "microsoftonline" in raw or "live.com" in raw:
+        return "microsoft"
+    return raw
+
+
+def resolve_oidc_role(user_email: str) -> str:
+    oidc_roles = as_plain_dict(st.secrets.get("oidc_roles", {}))
+    user_email = user_email.strip().lower()
+    supervisors = {str(v).strip().lower() for v in oidc_roles.get("supervisors", [])}
+    auditors = {str(v).strip().lower() for v in oidc_roles.get("auditors", [])}
+    if user_email in supervisors:
+        return "supervisor"
+    if user_email in auditors:
+        return "auditor"
+    return "operator"
 
 
 def has_permission(permission: str) -> bool:
@@ -443,6 +505,7 @@ def clear_auth_state() -> None:
             st.session_state.pop(key, None)
     st.session_state["auth_user_id"] = None
     st.session_state["auth_display_name"] = None
+    st.session_state["auth_provider"] = None
     st.session_state["auth_role"] = None
     st.session_state["auth_login_at"] = None
     st.session_state["auth_last_activity_at"] = None
@@ -456,11 +519,27 @@ def login_screen(conn_obj: Any) -> None:
     st.markdown("## Sign In Required")
     st.caption("Government AI Triage System")
     st.caption("Authentication is verified against the secured local user directory.")
-    st.caption("Passwords are stored as hashes, login failures are rate-limited, and sessions are audited.")
+    st.caption("Passwords are stored as hashes, login failures are rate-limited, sessions are audited, and MFA is supported.")
+
+    oidc_providers = get_oidc_providers()
+    if oidc_providers:
+        st.markdown("### Single Sign-On")
+        provider_cols = st.columns(max(1, len(oidc_providers)))
+        for idx, provider in enumerate(oidc_providers):
+            label = provider.replace("_", " ").title()
+            if provider_cols[idx].button(f"Continue with {label}", key=f"oidc_{provider}"):
+                try:
+                    st.login(provider)
+                except Exception as exc:
+                    st.error(f"OIDC login failed to start: {exc}")
+
+        st.caption("Google or Microsoft MFA is enforced by the identity provider when enabled on that account.")
+        st.markdown("---")
 
     with st.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
+        mfa_code = st.text_input("Verification Code", max_chars=6)
         submitted = st.form_submit_button("Sign in", type="primary")
 
     if submitted:
@@ -527,6 +606,29 @@ def login_screen(conn_obj: Any) -> None:
                 st.error("Invalid credentials")
             return
 
+        user_seed = load_auth_users().get(username.strip(), {})
+        totp_secret = str(user_seed.get("totp_secret", "")).strip()
+        if totp_secret and not verify_totp_code(totp_secret, mfa_code):
+            fail_ok, fail_msg, fail_state = record_login_failure(
+                conn_obj,
+                username.strip(),
+                lockout_after=LOGIN_LOCKOUT_AFTER,
+                lockout_minutes=LOGIN_LOCKOUT_MINUTES,
+            )
+            append_audit_event(
+                action="login",
+                result="denied",
+                details={
+                    "reason": "invalid_mfa_code",
+                    "failed_attempts": int((fail_state or {}).get("failed_attempts", 0)) if fail_ok else None,
+                    "locked_until_utc": (fail_state or {}).get("locked_until_utc") if fail_ok else None,
+                },
+                actor_user_id=username.strip(),
+                actor_role=str(user.get("role", "unauthenticated")),
+            )
+            st.error("Verification code is invalid.")
+            return
+
         login_ok, login_msg, refreshed_user = record_login_success(conn_obj, username.strip())
         if not login_ok or not refreshed_user:
             append_audit_event(
@@ -542,6 +644,7 @@ def login_screen(conn_obj: Any) -> None:
         now_iso = to_utc_iso(utc_now())
         st.session_state["auth_user_id"] = username.strip()
         st.session_state["auth_display_name"] = str(refreshed_user.get("display_name") or username.strip())
+        st.session_state["auth_provider"] = str(refreshed_user.get("auth_provider") or "local")
         st.session_state["auth_role"] = str(refreshed_user["role"])
         st.session_state["auth_login_at"] = now_iso
         st.session_state["auth_last_activity_at"] = now_iso
@@ -550,7 +653,11 @@ def login_screen(conn_obj: Any) -> None:
         append_audit_event(
             action="login",
             result="success",
-            details={"reason": "credentials_verified", "display_name": st.session_state["auth_display_name"]},
+            details={
+                "reason": "credentials_verified",
+                "display_name": st.session_state["auth_display_name"],
+                "auth_provider": st.session_state["auth_provider"],
+            },
             actor_user_id=username.strip(),
             actor_role=str(refreshed_user["role"]),
         )
@@ -937,6 +1044,41 @@ if not list_users(conn):
     render_auth_config_error()
     st.stop()
 
+if getattr(st.user, "is_logged_in", False) and not st.session_state.get("auth_user_id"):
+    oidc_email = str(getattr(st.user, "email", "") or "").strip().lower()
+    oidc_name = str(getattr(st.user, "name", "") or oidc_email or "OIDC User").strip()
+    oidc_provider = normalize_auth_provider(str(getattr(st.user, "iss", "") or "oidc"))
+    if oidc_email:
+        resolved_role = resolve_oidc_role(oidc_email)
+        external_ok, external_msg, external_user = upsert_external_user(
+            conn,
+            user_id=oidc_email,
+            display_name=oidc_name,
+            auth_provider=oidc_provider,
+            role=resolved_role,
+        )
+        if not external_ok or not external_user:
+            st.error(f"OIDC user sync failed: {external_msg}")
+            st.stop()
+        login_ok, login_msg, refreshed_user = record_login_success(conn, oidc_email)
+        if not login_ok or not refreshed_user:
+            st.error(f"OIDC login failed: {login_msg}")
+            st.stop()
+        now_iso = to_utc_iso(utc_now())
+        st.session_state["auth_user_id"] = oidc_email
+        st.session_state["auth_display_name"] = str(refreshed_user.get("display_name") or oidc_name)
+        st.session_state["auth_provider"] = str(refreshed_user.get("auth_provider") or oidc_provider)
+        st.session_state["auth_role"] = str(refreshed_user["role"])
+        st.session_state["auth_login_at"] = now_iso
+        st.session_state["auth_last_activity_at"] = now_iso
+        append_audit_event(
+            action="login",
+            result="success",
+            details={"reason": "oidc_login", "auth_provider": st.session_state["auth_provider"]},
+            actor_user_id=oidc_email,
+            actor_role=str(refreshed_user["role"]),
+        )
+
 if not st.session_state.get("auth_user_id"):
     login_screen(conn)
     st.stop()
@@ -960,6 +1102,7 @@ if not selected_case:
 role = str(st.session_state["auth_role"])
 current_user = str(st.session_state["auth_user_id"])
 display_name = str(st.session_state.get("auth_display_name") or current_user)
+auth_provider = str(st.session_state.get("auth_provider") or "local")
 audit_events_all = read_audit_events()
 refresh_notifications(conn, cases, audit_events_all)
 
@@ -985,14 +1128,16 @@ with st.sidebar:
 
     st.caption(
         bi(
-            f"المستخدم: {display_name} | المعرف: {current_user} | الدور: {role}",
-            f"User: {display_name} | ID: {current_user} | Role: {role}",
+            f"المستخدم: {display_name} | المعرف: {current_user} | الدور: {role} | الموفر: {auth_provider}",
+            f"User: {display_name} | ID: {current_user} | Role: {role} | Provider: {auth_provider}",
             arabic_default,
         )
     )
     if st.button(ui("تبديل المستخدم", "Switch User", arabic_default), width="stretch"):
         append_audit_event(action="logout", result="success", details={"reason": "switch_user"})
         clear_auth_state()
+        if auth_provider != "local" and getattr(st.user, "is_logged_in", False):
+            st.logout()
         st.rerun()
 
     nav_options = [
@@ -1044,6 +1189,7 @@ with header_cols[0]:
         <span class="chip">{bi("المستخدم", "User", arabic_default)}: {display_name}</span>
         <span class="chip">{bi("المعرف", "User ID", arabic_default)}: {current_user}</span>
         <span class="chip">{bi("الدور", "Role", arabic_default)}: {role}</span>
+        <span class="chip">{bi("الموفر", "Provider", arabic_default)}: {auth_provider}</span>
       </div>
     </div>
     """
@@ -1052,6 +1198,8 @@ with header_cols[1]:
     if st.button(ui("تسجيل الخروج", "Logout", arabic_default), width="stretch"):
         append_audit_event(action="logout", result="success", details={"reason": "user_initiated"})
         clear_auth_state()
+        if auth_provider != "local" and getattr(st.user, "is_logged_in", False):
+            st.logout()
         st.rerun()
 
 sla_counts = summarize_sla(cases)
@@ -2589,6 +2737,7 @@ elif selected_nav == "settings":
                 {
                     bi("المعرف", "User ID", arabic_default): u["user_id"],
                     bi("الاسم", "Display Name", arabic_default): u["display_name"],
+                    bi("الموفر", "Provider", arabic_default): u.get("auth_provider", "local"),
                     bi("الدور", "Role", arabic_default): u["role"],
                     bi("الحالة", "Status", arabic_default): u["status"],
                     bi("فشل المحاولات", "Failed Attempts", arabic_default): u["failed_attempts"],
@@ -2625,6 +2774,8 @@ elif selected_nav == "settings":
             "\n".join(
                 [
                     f"- {bi('كلمات المرور لا تحفظ كنص خام، بل كـ PBKDF2 hashes.', 'Passwords are never stored in plaintext; PBKDF2 hashes are stored instead.', arabic_default)}",
+                    f"- {bi('مستخدمو الدليل المحلي يمكن فرض TOTP MFA عليهم عبر secrets.toml.', 'Local directory users can be forced through TOTP MFA via secrets.toml.', arabic_default)}",
+                    f"- {bi('تسجيل الدخول عبر Google/Microsoft يستخدم OIDC، وMFA يدار من مزود الهوية.', 'Google/Microsoft sign-in uses OIDC, and MFA is managed by the identity provider.', arabic_default)}",
                     f"- {bi('بعد 5 محاولات فاشلة يتم قفل الحساب 15 دقيقة.', 'After 5 failed attempts, the account is locked for 15 minutes.', arabic_default)}",
                     f"- {bi('الجلسات تنتهي بالخمول وبحد أقصى زمني.', 'Sessions expire on idle timeout and maximum duration.', arabic_default)}",
                     f"- {bi('كل عمليات الدخول والخروج والإعدادات تسجل في التدقيق.', 'All login, logout, and settings events are audit logged.', arabic_default)}",

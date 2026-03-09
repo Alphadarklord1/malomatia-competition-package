@@ -119,6 +119,8 @@ def test_migrates_legacy_schema_to_current(tmp_path):
         assert conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
         ).fetchone()
+        user_columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        assert "auth_provider" in user_columns
 
         count = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
         state = conn.execute("SELECT state FROM cases WHERE case_id = 'legacy-1'").fetchone()[0]

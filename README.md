@@ -3,7 +3,7 @@
 Internal pilot prototype for Qatar public-service AI triage operations with:
 
 - authentication + RBAC + session safety
-- persisted user directory with hashed passwords and lockout policy
+- persisted user directory with hashed passwords, lockout policy, local TOTP MFA, and optional OIDC SSO
 - privacy masking + audit chain logging
 - SQLite persistence + schema migrations
 - workflow lifecycle + SLA monitoring
@@ -36,6 +36,14 @@ If login fails, verify `auth_users` exists in secrets file with valid password h
 Template:
 
 - `/Users/armankhan/Documents/malomatia-competition-package/.streamlit/secrets.example.toml`
+
+Optional auth upgrades:
+
+- Local 2-step verification: add `totp_secret` per user in `auth_users`
+- Google / Microsoft SSO: configure `[auth]`, `[auth.google]`, `[auth.microsoft]`
+- OIDC role mapping: configure `[oidc_roles]` lists for supervisors and auditors
+
+For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 
 ## Navigation
 
@@ -130,7 +138,7 @@ conn.close()
 PY
 ```
 
-Expected: `schema_version= 4`
+Expected: `schema_version= 6`
 
 ## DB Lock Troubleshooting
 
@@ -162,8 +170,9 @@ ps aux | rg streamlit
 4. Workflow actions respect RBAC and are audited.
 5. Search/filter/pagination behavior is deterministic.
 6. Notifications and saved views work per role/user rules.
-7. Existing `triage.db` migrates to schema v4 safely.
-8. `./run_validation.sh` passes.
+7. Existing `triage.db` migrates to schema v6 safely.
+8. Local MFA and optional Google/Microsoft SSO are configured correctly for the target environment.
+9. `./run_validation.sh` passes.
 
 ## Shareable Deployment
 

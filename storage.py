@@ -9,7 +9,7 @@ from typing import Any
 
 from workflow import can_transition
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 def utc_now() -> datetime:
@@ -95,6 +95,9 @@ def _infer_legacy_schema_version(conn: sqlite3.Connection) -> int:
     has_saved_views = _table_exists(conn, "saved_views")
     has_notifications = _table_exists(conn, "notifications")
     has_users = _table_exists(conn, "users")
+    has_auth_provider = _column_exists(conn, "users", "auth_provider") if has_users else False
+    if has_saved_views and has_notifications and has_users and has_auth_provider:
+        return 6
     if has_saved_views and has_notifications and has_users:
         return 5
     if has_saved_views and has_notifications:
@@ -128,6 +131,11 @@ def _ensure_case_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: 
 def _ensure_event_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: str) -> None:
     if not _column_exists(conn, "workflow_events", column_name):
         conn.execute(f"ALTER TABLE workflow_events ADD COLUMN {column_name} {ddl_suffix}")
+
+
+def _ensure_user_column(conn: sqlite3.Connection, column_name: str, ddl_suffix: str) -> None:
+    if not _column_exists(conn, "users", column_name):
+        conn.execute(f"ALTER TABLE users ADD COLUMN {column_name} {ddl_suffix}")
 
 
 def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
@@ -217,6 +225,7 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
                     CREATE TABLE IF NOT EXISTS users (
                       user_id TEXT PRIMARY KEY,
                       display_name TEXT NOT NULL,
+                      auth_provider TEXT NOT NULL DEFAULT 'local',
                       role TEXT NOT NULL,
                       password_hash TEXT NOT NULL,
                       status TEXT NOT NULL DEFAULT 'active',
@@ -231,6 +240,12 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
                 )
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)")
+
+        if next_version == 6:
+            with conn:
+                _ensure_user_column(conn, "auth_provider", "TEXT NOT NULL DEFAULT 'local'")
+                conn.execute("UPDATE users SET auth_provider = COALESCE(NULLIF(auth_provider, ''), 'local')")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_users_provider ON users(auth_provider)")
 
         version = next_version
 
@@ -750,7 +765,7 @@ def list_users(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT user_id, display_name, role, status, failed_attempts, locked_until_utc,
-               password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
+               auth_provider, password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
         FROM users
         ORDER BY display_name ASC, user_id ASC
         """
@@ -761,7 +776,7 @@ def list_users(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 def get_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any] | None:
     row = conn.execute(
         """
-        SELECT user_id, display_name, role, password_hash, status, failed_attempts, locked_until_utc,
+        SELECT user_id, display_name, auth_provider, role, password_hash, status, failed_attempts, locked_until_utc,
                password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
         FROM users
         WHERE user_id = ?
@@ -799,7 +814,7 @@ def bootstrap_auth_users(conn: sqlite3.Connection, auth_users: dict[str, dict[st
                     conn.execute(
                         """
                         UPDATE users
-                        SET display_name = ?, role = ?, password_hash = ?, status = ?, password_changed_at_utc = ?, updated_at_utc = ?
+                        SET display_name = ?, auth_provider = 'local', role = ?, password_hash = ?, status = ?, password_changed_at_utc = ?, updated_at_utc = ?
                         WHERE user_id = ?
                         """,
                         (display_name, role, password_hash, status, password_changed_at_utc, now_iso, user_id),
@@ -808,15 +823,52 @@ def bootstrap_auth_users(conn: sqlite3.Connection, auth_users: dict[str, dict[st
                     conn.execute(
                         """
                         INSERT INTO users (
-                          user_id, display_name, role, password_hash, status, failed_attempts,
+                          user_id, display_name, auth_provider, role, password_hash, status, failed_attempts,
                           locked_until_utc, password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
-                        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)
+                        ) VALUES (?, ?, 'local', ?, ?, ?, 0, NULL, ?, NULL, ?, ?)
                         """,
                         (user_id, display_name, role, password_hash, status, now_iso, now_iso, now_iso),
                     )
         return True, "ok"
     except sqlite3.Error as exc:
         return False, _sqlite_error_message(exc)
+
+
+def upsert_external_user(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    display_name: str,
+    auth_provider: str,
+    role: str,
+    status: str = "active",
+) -> tuple[bool, str, dict[str, Any] | None]:
+    now_iso = to_utc_iso(utc_now())
+    try:
+        with conn:
+            existing = conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET display_name = ?, auth_provider = ?, role = ?, status = ?, updated_at_utc = ?
+                    WHERE user_id = ?
+                    """,
+                    (display_name, auth_provider, role, status, now_iso, user_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO users (
+                      user_id, display_name, auth_provider, role, password_hash, status, failed_attempts,
+                      locked_until_utc, password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)
+                    """,
+                    (user_id, display_name, auth_provider, role, "oidc$managed", status, now_iso, now_iso, now_iso),
+                )
+        return True, "ok", get_user(conn, user_id)
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc), None
 
 
 def record_login_failure(
@@ -830,7 +882,7 @@ def record_login_failure(
         with conn:
             row = conn.execute(
                 """
-                SELECT user_id, display_name, role, password_hash, status, failed_attempts, locked_until_utc,
+                SELECT user_id, display_name, auth_provider, role, password_hash, status, failed_attempts, locked_until_utc,
                        password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
                 FROM users
                 WHERE user_id = ?

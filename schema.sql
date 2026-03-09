@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE TABLE IF NOT EXISTS users (
   user_id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
+  auth_provider TEXT NOT NULL DEFAULT 'local',
   role TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active',
@@ -108,3 +109,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_unique_key ON notifications(
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+CREATE INDEX IF NOT EXISTS idx_users_provider ON users(auth_provider);

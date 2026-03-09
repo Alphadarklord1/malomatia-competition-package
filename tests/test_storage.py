@@ -185,6 +185,7 @@ def test_auth_user_bootstrap_and_login_tracking(tmp_path):
         users = list_users(conn)
         assert len(users) == 1
         assert users[0]["display_name"] == "Operator Demo"
+        assert users[0]["auth_provider"] == "local"
 
         ok, msg, user = record_login_failure(conn, "operator_demo", lockout_after=2, lockout_minutes=15)
         assert ok, msg
@@ -203,5 +204,30 @@ def test_auth_user_bootstrap_and_login_tracking(tmp_path):
         assert int(user["failed_attempts"]) == 0
         assert user["locked_until_utc"] is None
         assert get_user(conn, "operator_demo") is not None
+    finally:
+        conn.close()
+
+
+def test_external_user_upsert_sets_provider_and_managed_hash(tmp_path):
+    from storage import upsert_external_user
+
+    conn = connect_db(tmp_path / "oidc_users.db")
+    try:
+        ensure_schema(conn, SCHEMA_PATH)
+        ok, msg, user = upsert_external_user(
+            conn,
+            user_id="user@example.com",
+            display_name="OIDC User",
+            auth_provider="google",
+            role="operator",
+        )
+        assert ok, msg
+        assert user is not None
+        assert user["auth_provider"] == "google"
+        assert user["password_hash"] == "oidc$managed"
+
+        stored = get_user(conn, "user@example.com")
+        assert stored is not None
+        assert stored["auth_provider"] == "google"
     finally:
         conn.close()

@@ -72,8 +72,13 @@ def test_real_auth_directory_contract_present() -> None:
     assert "bootstrap_auth_users" in source
     assert "record_login_failure" in source
     assert "record_login_success" in source
+    assert "upsert_external_user" in source
     assert "User Directory" in source
     assert "Encryption & Security Policies" in source
+    assert "Verification Code" in source
+    assert "Single Sign-On" in source
+    assert "st.login(provider)" in source
+    assert "Google or Microsoft MFA is enforced" in source
 
 
 def test_mobile_responsive_theme_contract_present() -> None:
