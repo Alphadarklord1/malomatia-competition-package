@@ -5,14 +5,18 @@ from pathlib import Path
 from rag_engine import (
     answer_question,
     baseline_answer,
+    build_knowledge_manifest,
     build_index,
     capability_guide,
     retrieve,
+    run_rag_evaluation,
     validate_api_key_format,
 )
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 KB_PATH = BASE_DIR / "domain_knowledge.json"
+MANIFEST_PATH = BASE_DIR / "knowledge_manifest.json"
+EVAL_PATH = BASE_DIR / "rag_eval_set.json"
 
 
 def test_build_index_has_chunks_for_both_languages() -> None:
@@ -75,6 +79,33 @@ def test_policy_blocked_query_returns_refusal() -> None:
     assert result["policy_blocked"] is True
     assert result["hits"] == []
     assert "cannot" in result["answer"].lower() or "policy" in result["answer"].lower()
+
+
+def test_low_evidence_query_returns_insufficient_evidence() -> None:
+    result = answer_question(
+        query="Explain quantum gravity in detail",
+        data_path=KB_PATH,
+        language="en",
+        top_k=3,
+        department_hint=None,
+        openai_api_key=None,
+    )
+
+    assert result["insufficient_evidence"] is True
+    assert "insufficient" in result["answer"].lower()
+
+
+def test_build_knowledge_manifest_returns_document_rows() -> None:
+    manifest = build_knowledge_manifest(KB_PATH, MANIFEST_PATH)
+    assert manifest["last_refresh_utc"]
+    assert len(manifest["documents"]) == 8
+    assert manifest["documents"][0]["chunk_count"] > 0
+
+
+def test_rag_evaluation_meets_minimum_quality_bar() -> None:
+    summary = run_rag_evaluation(eval_path=EVAL_PATH, data_path=KB_PATH, language="en")
+    assert summary["total"] >= 8
+    assert summary["pass_rate"] >= 75.0
 
 
 def test_api_key_validation_rejects_invalid_format() -> None:

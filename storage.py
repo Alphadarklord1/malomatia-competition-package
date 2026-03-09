@@ -9,7 +9,7 @@ from typing import Any
 
 from workflow import can_transition
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 def utc_now() -> datetime:
@@ -96,6 +96,11 @@ def _infer_legacy_schema_version(conn: sqlite3.Connection) -> int:
     has_notifications = _table_exists(conn, "notifications")
     has_users = _table_exists(conn, "users")
     has_auth_provider = _column_exists(conn, "users", "auth_provider") if has_users else False
+    has_mfa_required = _column_exists(conn, "users", "mfa_required") if has_users else False
+    has_mfa_type = _column_exists(conn, "users", "mfa_type") if has_users else False
+    has_totp_secret = _column_exists(conn, "users", "totp_secret") if has_users else False
+    if has_saved_views and has_notifications and has_users and has_auth_provider and has_mfa_required and has_mfa_type and has_totp_secret:
+        return 7
     if has_saved_views and has_notifications and has_users and has_auth_provider:
         return 6
     if has_saved_views and has_notifications and has_users:
@@ -228,6 +233,9 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
                       auth_provider TEXT NOT NULL DEFAULT 'local',
                       role TEXT NOT NULL,
                       password_hash TEXT NOT NULL,
+                      mfa_required INTEGER NOT NULL DEFAULT 0,
+                      mfa_type TEXT NOT NULL DEFAULT 'none',
+                      totp_secret TEXT,
                       status TEXT NOT NULL DEFAULT 'active',
                       failed_attempts INTEGER NOT NULL DEFAULT 0,
                       locked_until_utc TEXT,
@@ -246,6 +254,32 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
                 _ensure_user_column(conn, "auth_provider", "TEXT NOT NULL DEFAULT 'local'")
                 conn.execute("UPDATE users SET auth_provider = COALESCE(NULLIF(auth_provider, ''), 'local')")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_users_provider ON users(auth_provider)")
+
+        if next_version == 7:
+            with conn:
+                _ensure_user_column(conn, "mfa_required", "INTEGER NOT NULL DEFAULT 0")
+                _ensure_user_column(conn, "mfa_type", "TEXT NOT NULL DEFAULT 'none'")
+                _ensure_user_column(conn, "totp_secret", "TEXT")
+                conn.execute("UPDATE users SET mfa_required = COALESCE(mfa_required, 0)")
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET mfa_type = CASE
+                        WHEN auth_provider != 'local' THEN 'provider'
+                        WHEN COALESCE(NULLIF(totp_secret, ''), '') != '' OR COALESCE(mfa_required, 0) = 1 THEN 'totp'
+                        ELSE 'none'
+                    END
+                    """
+                )
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET mfa_required = CASE
+                        WHEN auth_provider = 'local' AND COALESCE(mfa_type, 'none') = 'totp' THEN 1
+                        ELSE 0
+                    END
+                    """
+                )
 
         version = next_version
 
@@ -765,6 +799,7 @@ def list_users(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT user_id, display_name, role, status, failed_attempts, locked_until_utc,
+               mfa_required, mfa_type, totp_secret,
                auth_provider, password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
         FROM users
         ORDER BY display_name ASC, user_id ASC
@@ -777,6 +812,7 @@ def get_user(conn: sqlite3.Connection, user_id: str) -> dict[str, Any] | None:
     row = conn.execute(
         """
         SELECT user_id, display_name, auth_provider, role, password_hash, status, failed_attempts, locked_until_utc,
+               mfa_required, mfa_type, totp_secret,
                password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
         FROM users
         WHERE user_id = ?
@@ -795,6 +831,9 @@ def bootstrap_auth_users(conn: sqlite3.Connection, auth_users: dict[str, dict[st
                 password_hash = str(payload.get("password_hash", "")).strip()
                 display_name = str(payload.get("display_name", "")).strip() or user_id.replace("_", " ").title()
                 status = str(payload.get("status", "active")).strip().lower() or "active"
+                totp_secret = str(payload.get("totp_secret", "")).strip() or None
+                mfa_required = 1 if totp_secret else 0
+                mfa_type = "totp" if totp_secret else "none"
                 if not role or not password_hash:
                     continue
 
@@ -814,20 +853,20 @@ def bootstrap_auth_users(conn: sqlite3.Connection, auth_users: dict[str, dict[st
                     conn.execute(
                         """
                         UPDATE users
-                        SET display_name = ?, auth_provider = 'local', role = ?, password_hash = ?, status = ?, password_changed_at_utc = ?, updated_at_utc = ?
+                        SET display_name = ?, auth_provider = 'local', role = ?, password_hash = ?, mfa_required = ?, mfa_type = ?, totp_secret = ?, status = ?, password_changed_at_utc = ?, updated_at_utc = ?
                         WHERE user_id = ?
                         """,
-                        (display_name, role, password_hash, status, password_changed_at_utc, now_iso, user_id),
+                        (display_name, role, password_hash, mfa_required, mfa_type, totp_secret, status, password_changed_at_utc, now_iso, user_id),
                     )
                 else:
                     conn.execute(
                         """
                         INSERT INTO users (
-                          user_id, display_name, auth_provider, role, password_hash, status, failed_attempts,
+                          user_id, display_name, auth_provider, role, password_hash, mfa_required, mfa_type, totp_secret, status, failed_attempts,
                           locked_until_utc, password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
-                        ) VALUES (?, ?, 'local', ?, ?, ?, 0, NULL, ?, NULL, ?, ?)
+                        ) VALUES (?, ?, 'local', ?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)
                         """,
-                        (user_id, display_name, role, password_hash, status, now_iso, now_iso, now_iso),
+                        (user_id, display_name, role, password_hash, mfa_required, mfa_type, totp_secret, status, now_iso, now_iso, now_iso),
                     )
         return True, "ok"
     except sqlite3.Error as exc:
@@ -851,7 +890,7 @@ def upsert_external_user(
                 conn.execute(
                     """
                     UPDATE users
-                    SET display_name = ?, auth_provider = ?, role = ?, status = ?, updated_at_utc = ?
+                    SET display_name = ?, auth_provider = ?, role = ?, mfa_required = 0, mfa_type = 'provider', totp_secret = NULL, status = ?, updated_at_utc = ?
                     WHERE user_id = ?
                     """,
                     (display_name, auth_provider, role, status, now_iso, user_id),
@@ -860,9 +899,9 @@ def upsert_external_user(
                 conn.execute(
                     """
                     INSERT INTO users (
-                      user_id, display_name, auth_provider, role, password_hash, status, failed_attempts,
+                      user_id, display_name, auth_provider, role, password_hash, mfa_required, mfa_type, totp_secret, status, failed_attempts,
                       locked_until_utc, password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, 0, 'provider', NULL, ?, 0, NULL, ?, NULL, ?, ?)
                     """,
                     (user_id, display_name, auth_provider, role, "oidc$managed", status, now_iso, now_iso, now_iso),
                 )
@@ -883,6 +922,7 @@ def record_login_failure(
             row = conn.execute(
                 """
                 SELECT user_id, display_name, auth_provider, role, password_hash, status, failed_attempts, locked_until_utc,
+                       mfa_required, mfa_type, totp_secret,
                        password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
                 FROM users
                 WHERE user_id = ?
@@ -903,6 +943,142 @@ def record_login_failure(
                 WHERE user_id = ?
                 """,
                 (failed_attempts, locked_until_utc, to_utc_iso(utc_now()), user_id),
+            )
+        return True, "ok", get_user(conn, user_id)
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc), None
+
+
+def create_local_user(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    display_name: str,
+    role: str,
+    password_hash: str,
+    status: str = "active",
+    mfa_required: bool = False,
+    totp_secret: str | None = None,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    now_iso = to_utc_iso(utc_now())
+    mfa_type = "totp" if mfa_required else "none"
+    try:
+        with conn:
+            existing = conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if existing:
+                return False, "User already exists", None
+            conn.execute(
+                """
+                INSERT INTO users (
+                  user_id, display_name, auth_provider, role, password_hash, mfa_required, mfa_type, totp_secret, status,
+                  failed_attempts, locked_until_utc, password_changed_at_utc, last_login_at_utc, created_at_utc, updated_at_utc
+                ) VALUES (?, ?, 'local', ?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)
+                """,
+                (
+                    user_id,
+                    display_name,
+                    role,
+                    password_hash,
+                    1 if mfa_required else 0,
+                    mfa_type,
+                    totp_secret if mfa_required else None,
+                    status,
+                    now_iso,
+                    now_iso,
+                    now_iso,
+                ),
+            )
+        return True, "ok", get_user(conn, user_id)
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc), None
+
+
+def set_user_status(conn: sqlite3.Connection, user_id: str, status: str) -> tuple[bool, str, dict[str, Any] | None]:
+    try:
+        with conn:
+            row = conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not row:
+                return False, "User not found", None
+            conn.execute(
+                "UPDATE users SET status = ?, updated_at_utc = ? WHERE user_id = ?",
+                (status, to_utc_iso(utc_now()), user_id),
+            )
+        return True, "ok", get_user(conn, user_id)
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc), None
+
+
+def set_user_role(conn: sqlite3.Connection, user_id: str, role: str) -> tuple[bool, str, dict[str, Any] | None]:
+    try:
+        with conn:
+            row = conn.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not row:
+                return False, "User not found", None
+            conn.execute(
+                "UPDATE users SET role = ?, updated_at_utc = ? WHERE user_id = ?",
+                (role, to_utc_iso(utc_now()), user_id),
+            )
+        return True, "ok", get_user(conn, user_id)
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc), None
+
+
+def reset_local_user_password(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    password_hash: str,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    now_iso = to_utc_iso(utc_now())
+    try:
+        with conn:
+            row = conn.execute("SELECT user_id, auth_provider FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not row:
+                return False, "User not found", None
+            if str(row["auth_provider"]) != "local":
+                return False, "Password reset is local-only", None
+            conn.execute(
+                """
+                UPDATE users
+                SET password_hash = ?, failed_attempts = 0, locked_until_utc = NULL, password_changed_at_utc = ?, updated_at_utc = ?
+                WHERE user_id = ?
+                """,
+                (password_hash, now_iso, now_iso, user_id),
+            )
+        return True, "ok", get_user(conn, user_id)
+    except sqlite3.Error as exc:
+        return False, _sqlite_error_message(exc), None
+
+
+def set_local_totp_requirement(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    mfa_required: bool,
+    totp_secret: str | None,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    try:
+        with conn:
+            row = conn.execute("SELECT user_id, auth_provider FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if not row:
+                return False, "User not found", None
+            if str(row["auth_provider"]) != "local":
+                return False, "TOTP management is local-only", None
+            effective_secret = (totp_secret or "").strip() or None
+            effective_required = bool(mfa_required and effective_secret)
+            conn.execute(
+                """
+                UPDATE users
+                SET mfa_required = ?, mfa_type = ?, totp_secret = ?, updated_at_utc = ?
+                WHERE user_id = ?
+                """,
+                (
+                    1 if effective_required else 0,
+                    "totp" if effective_required else "none",
+                    effective_secret if effective_required else None,
+                    to_utc_iso(utc_now()),
+                    user_id,
+                ),
             )
         return True, "ok", get_user(conn, user_id)
     except sqlite3.Error as exc:

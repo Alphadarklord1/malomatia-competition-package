@@ -14,8 +14,8 @@ Observed output:
 Running smoke validation...
 PASS: smoke validation checks completed
 Running pytest suite...
-...................                                                      [100%]
-19 passed in 0.16s
+...............................                                          [100%]
+31 passed in 0.14s
 ```
 
 ## Acceptance Checklist (Pass/Fail)
@@ -27,12 +27,14 @@ Running pytest suite...
 | Session/action safety guard | PASS | `require_active_action(...)` guard usage in `/Users/armankhan/Documents/malomatia-competition-package/gov_triage_dashboard.py` |
 | Workflow/RBAC enforcement | PASS | `/Users/armankhan/Documents/malomatia-competition-package/tests/test_workflow.py` |
 | DB contention handled (controlled error) | PASS | lock test in `/Users/armankhan/Documents/malomatia-competition-package/validation_smoke.py` and `/Users/armankhan/Documents/malomatia-competition-package/tests/test_storage.py` |
-| Schema migration idempotent and v4-safe | PASS | `/Users/armankhan/Documents/malomatia-competition-package/tests/test_migrations.py` |
+| Schema migration idempotent and v7-safe | PASS | `/Users/armankhan/Documents/malomatia-competition-package/tests/test_migrations.py` |
 | Arabic default + clean single-language toggle | PASS | `ui_language_mode` default and toggle contract checks |
 | Distinct nav pages (incl. Help/Notifications) | PASS | UI contract + rendered nav branches |
 | Search/filter/pagination contracts present | PASS | smoke/UI contract checks + runtime controls |
 | Saved views + notifications storage contract | PASS | storage tests for create/list/delete/ack |
+| Account management and managed MFA active | PASS | `storage.py` user-admin functions + Settings UI + storage tests |
 | Session 3 RAG retrieval pipeline active | PASS | `rag_engine.py` + `tests/test_rag_engine.py` + Assistant nav |
+| Knowledge manifest and RAG benchmark evaluation active | PASS | `knowledge_manifest.json` + `rag_eval_set.json` + Assistant eval panel + validation smoke |
 | Streamlit cloud packaging ready | PASS | `/Users/armankhan/Documents/malomatia-competition-package/requirements.txt` + `/Users/armankhan/Documents/malomatia-competition-package/DEPLOYMENT.md` + CI smoke workflow |
 
 ## Screenshot Contract
@@ -56,3 +58,5 @@ Required filenames:
 
 - Scope is local and Streamlit Community demo readiness.
 - Production controls (enterprise SSO/KMS/SIEM) remain out of this milestone.
+- Auth state now includes provider-aware local/OIDC users plus managed local TOTP.
+- RAG now exposes corpus manifest and an 8-question benchmark set with pass-rate summary.

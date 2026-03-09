@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import io
 import json
+import os
 import re
 import struct
 import uuid
@@ -20,8 +21,10 @@ from rag_engine import (
     RagConfigError,
     answer_question,
     baseline_answer,
+    build_knowledge_manifest,
     build_index,
     capability_guide,
+    run_rag_evaluation,
     test_openai_runtime,
     validate_api_key_format,
 )
@@ -32,6 +35,10 @@ from storage import (
     bootstrap_auth_users,
     compute_sla_state,
     connect_db,
+    create_local_user,
+    set_local_totp_requirement,
+    set_user_role,
+    set_user_status,
     ensure_schema,
     export_cases_csv_rows,
     get_case,
@@ -50,6 +57,7 @@ from storage import (
     record_case_select,
     record_login_failure,
     record_login_success,
+    reset_local_user_password,
     seed_cases_if_empty,
     to_utc_iso,
     transition_case_state,
@@ -68,9 +76,11 @@ THEME_PATH = BASE_DIR / "theme.css"
 SCHEMA_PATH = BASE_DIR / "schema.sql"
 DB_PATH = BASE_DIR / "triage.db"
 DOMAIN_KB_PATH = BASE_DIR / "domain_knowledge.json"
+KNOWLEDGE_MANIFEST_PATH = BASE_DIR / "knowledge_manifest.json"
+RAG_EVAL_PATH = BASE_DIR / "rag_eval_set.json"
 AUDIT_LOG_PATH = BASE_DIR / "audit.log.jsonl"
 AUDIT_ARCHIVE_PATH = BASE_DIR / "audit.archive.jsonl"
-AUTH_SCHEMA_VERSION = 6
+AUTH_SCHEMA_VERSION = 7
 LOGIN_LOCKOUT_AFTER = 5
 LOGIN_LOCKOUT_MINUTES = 15
 
@@ -201,6 +211,16 @@ def verify_password(password: str, stored_hash: str) -> bool:
     return False
 
 
+def hash_password_pbkdf2(password: str, iterations: int = 210000) -> str:
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return "pbkdf2_sha256$%s$%s$%s" % (
+        iterations,
+        base64.b64encode(salt).decode("utf-8"),
+        base64.b64encode(digest).decode("utf-8"),
+    )
+
+
 def _normalize_totp_secret(secret: str) -> str:
     return "".join(secret.strip().split()).upper()
 
@@ -256,6 +276,20 @@ def resolve_oidc_role(user_email: str) -> str:
     if user_email in auditors:
         return "auditor"
     return "operator"
+
+
+def auth_status_snapshot(conn_obj: Any) -> dict[str, Any]:
+    providers = get_oidc_providers()
+    users = list_users(conn_obj)
+    local_users = [u for u in users if str(u.get("auth_provider", "local")) == "local"]
+    local_mfa_enabled = sum(1 for u in local_users if int(u.get("mfa_required", 0)) == 1)
+    return {
+        "oidc_enabled": bool(providers),
+        "providers": providers,
+        "local_user_count": len(local_users),
+        "local_mfa_enabled": local_mfa_enabled,
+        "current_provider": str(st.session_state.get("auth_provider") or "local"),
+    }
 
 
 def has_permission(permission: str) -> bool:
@@ -606,9 +640,9 @@ def login_screen(conn_obj: Any) -> None:
                 st.error("Invalid credentials")
             return
 
-        user_seed = load_auth_users().get(username.strip(), {})
-        totp_secret = str(user_seed.get("totp_secret", "")).strip()
-        if totp_secret and not verify_totp_code(totp_secret, mfa_code):
+        totp_secret = str(user.get("totp_secret") or "").strip()
+        mfa_required = int(user.get("mfa_required", 0)) == 1 and str(user.get("mfa_type", "none")) == "totp"
+        if mfa_required and not verify_totp_code(totp_secret, mfa_code):
             fail_ok, fail_msg, fail_state = record_login_failure(
                 conn_obj,
                 username.strip(),
@@ -2188,6 +2222,12 @@ elif selected_nav == "assistant":
         )
         try:
             kb_index = build_index(str(DOMAIN_KB_PATH), "ar" if arabic_default else "en")
+            knowledge_manifest = build_knowledge_manifest(DOMAIN_KB_PATH, KNOWLEDGE_MANIFEST_PATH)
+            rag_eval = run_rag_evaluation(
+                eval_path=RAG_EVAL_PATH,
+                data_path=DOMAIN_KB_PATH,
+                language="ar" if arabic_default else "en",
+            )
             st.caption(
                 bi(
                     f"قاعدة المعرفة جاهزة: {len(kb_index['chunks'])} مقطع مسترجع.",
@@ -2209,6 +2249,14 @@ elif selected_nav == "assistant":
                 details={"reason": "kb_config_error", "error": str(exc)[:180]},
             )
             st.stop()
+
+        st.info(
+            bi(
+                "للعرض السريع: جرّب الاستعلامات الثلاثة، وسجّل الدخول كمشرف لمراجعة الحوكمة والإدارة، ثم افتح أثر الاسترجاع.",
+                "For a fast demo: run the three sample queries, sign in as supervisor to review governance/admin, then open the retrieval trace.",
+                arabic_default,
+            )
+        )
 
         sample_queries = [
             (
@@ -2488,8 +2536,43 @@ elif selected_nav == "assistant":
                             )
                         )
 
+        with st.expander(bi("مصادر المعرفة", "Knowledge Sources", arabic_default), expanded=False):
+            st.caption(
+                bi(
+                    f"آخر تحديث للمعرفة: {knowledge_manifest['last_refresh_utc']}",
+                    f"Knowledge last refresh: {knowledge_manifest['last_refresh_utc']}",
+                    arabic_default,
+                )
+            )
+            st.dataframe(
+                [
+                    {
+                        bi("الوثيقة", "Document", arabic_default): row["document_id"],
+                        bi("العنوان", "Title", arabic_default): row["title_ar"] if arabic_default else row["title_en"],
+                        bi("النطاق", "Department Scope", arabic_default): row["department_scope"],
+                        bi("الإصدار", "Version", arabic_default): row["version"],
+                        bi("المقاطع", "Chunks", arabic_default): row["chunk_count"],
+                    }
+                    for row in knowledge_manifest["documents"]
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+
     with right_col:
         policy = capability_guide("ar" if arabic_default else "en")
+        st.markdown(f"### {bi('تقييم RAG', 'RAG Evaluation', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- {bi('الحالات المختبرة', 'Benchmarks', arabic_default)}: {rag_eval['total']}",
+                    f"- {bi('النجاح', 'Passed', arabic_default)}: {rag_eval['passed']}",
+                    f"- {bi('معدل النجاح', 'Pass rate', arabic_default)}: {rag_eval['pass_rate']}%",
+                ]
+            )
+        )
+        with st.expander(bi("تفاصيل التقييم", "Evaluation Details", arabic_default), expanded=False):
+            st.dataframe(rag_eval["rows"], width="stretch", hide_index=True)
         st.markdown(f"### {bi('ما الذي يمكنه فعله', 'What It Can Do', arabic_default)}")
         st.markdown("\n".join(f"- {item}" for item in policy["can"]))
         st.markdown(f"### {bi('ما الذي لا يمكنه فعله', 'What It Cannot Do', arabic_default)}")
@@ -2602,6 +2685,13 @@ elif selected_nav == "notifications":
 elif selected_nav == "help":
     with main_col:
         st.markdown(f"### {bi('المساعدة', 'Help & About', arabic_default)}")
+        st.info(
+            bi(
+                "دليل العرض: 1) افتح الطلبات الواردة، 2) اختر حالة عربية، 3) راجع أثر القرار، 4) افتح المساعد المعرفي لتوضيح RAG.",
+                "Demo guide: 1) Open Incoming Requests, 2) select an Arabic case, 3) review decision trace, 4) open Knowledge Assistant to explain the RAG flow.",
+                arabic_default,
+            )
+        )
         st.markdown(f"#### {bi('مصفوفة الأدوار', 'Role Capability Matrix', arabic_default)}")
         role_rows = [
             {"role": "operator", "caps": "view/select/approve/assign/transition"},
@@ -2645,6 +2735,17 @@ elif selected_nav == "help":
         st.code("./run_prototype.sh", language="bash")
 
     with right_col:
+        st.markdown(f"### {bi('لماذا هذا مهم', 'Why This Matters', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- {bi('المشكلة', 'Problem', arabic_default)}: {bi('التصنيف اليدوي متعدد اللغات يسبب التأخير وسوء التوجيه ومخاطر SLA.', 'Manual multilingual triage causes delay, misrouting, and SLA risk.', arabic_default)}",
+                    f"- {bi('منهج AI', 'AI Method', arabic_default)}: {bi('تصنيف ثنائي اللغة + استرجاع RAG للسياسات + تفسير قرار + إشراف بشري.', 'Bilingual classification + policy-grounded RAG + decision trace + human oversight.', arabic_default)}",
+                    f"- {bi('الثقة والحوكمة', 'Trust & Governance', arabic_default)}: {bi('RBAC، تدقيق، إخفاء بيانات، MFA، وقيود على المساعد.', 'RBAC, audit, privacy masking, MFA, and constrained assistant behavior.', arabic_default)}",
+                    f"- {bi('الأثر', 'Impact', arabic_default)}: {bi('تقليل زمن الاستجابة الأولى وتحسين التوجيه والامتثال التشغيلي.', 'Reduced first-response time, better routing, and stronger operational compliance.', arabic_default)}",
+                ]
+            )
+        )
         st.markdown(f"### {bi('حول النظام', 'About System', arabic_default)}")
         st.markdown(
             "\n".join(
@@ -2773,6 +2874,236 @@ elif selected_nav == "settings":
                 append_audit_event(action="settings_reset", result="success", details={"reason": "user_requested"})
                 st.rerun()
 
+        current_user_record = get_user(conn, current_user)
+        st.markdown(f"### {bi('حسابي', 'My Account', arabic_default)}")
+        if current_user_record:
+            user_mfa_state = (
+                bi("TOTP مفعل", "TOTP enabled", arabic_default)
+                if int(current_user_record.get("mfa_required", 0)) == 1 and str(current_user_record.get("mfa_type", "none")) == "totp"
+                else (
+                    bi("MFA يدار من المزود", "MFA managed by provider", arabic_default)
+                    if str(current_user_record.get("mfa_type", "none")) == "provider"
+                    else bi("بدون MFA محلي", "No local MFA", arabic_default)
+                )
+            )
+            st.markdown(
+                "\n".join(
+                    [
+                        f"- {bi('المعرف', 'User ID', arabic_default)}: `{current_user_record['user_id']}`",
+                        f"- {bi('الموفر', 'Provider', arabic_default)}: {current_user_record.get('auth_provider', 'local')}",
+                        f"- {bi('الدور', 'Role', arabic_default)}: {current_user_record.get('role', '-')}",
+                        f"- {bi('حالة MFA', 'MFA status', arabic_default)}: {user_mfa_state}",
+                    ]
+                )
+            )
+            if str(current_user_record.get("auth_provider", "local")) == "local":
+                with st.form("self_service_password_form"):
+                    current_password = st.text_input(
+                        bi("كلمة المرور الحالية", "Current password", arabic_default),
+                        type="password",
+                    )
+                    new_password = st.text_input(
+                        bi("كلمة المرور الجديدة", "New password", arabic_default),
+                        type="password",
+                    )
+                    confirm_password = st.text_input(
+                        bi("تأكيد كلمة المرور", "Confirm password", arabic_default),
+                        type="password",
+                    )
+                    password_submit = st.form_submit_button(
+                        ui("تغيير كلمة المرور", "Change Password", arabic_default),
+                        type="primary",
+                    )
+                if password_submit:
+                    if not verify_password(current_password, str(current_user_record.get("password_hash", ""))):
+                        st.error(bi("كلمة المرور الحالية غير صحيحة.", "Current password is incorrect.", arabic_default))
+                    elif len(new_password) < 8:
+                        st.error(bi("يجب أن تكون كلمة المرور 8 أحرف على الأقل.", "Password must be at least 8 characters.", arabic_default))
+                    elif new_password != confirm_password:
+                        st.error(bi("تأكيد كلمة المرور غير مطابق.", "Password confirmation does not match.", arabic_default))
+                    elif require_active_action("view", "change_password", case_id=None):
+                        ok_pw, msg_pw, _ = reset_local_user_password(
+                            conn,
+                            current_user,
+                            password_hash=hash_password_pbkdf2(new_password),
+                        )
+                        if ok_pw:
+                            append_audit_event(action="change_password", result="success", actor_user_id=current_user, actor_role=role)
+                            st.success(bi("تم تحديث كلمة المرور.", "Password updated.", arabic_default))
+                            st.rerun()
+                        else:
+                            append_audit_event(
+                                action="change_password",
+                                result="failure" if msg_pw.startswith("DB_") else "denied",
+                                actor_user_id=current_user,
+                                actor_role=role,
+                                details={"reason": msg_pw},
+                            )
+                            render_mutation_error(msg_pw, arabic_default)
+            else:
+                st.caption(
+                    bi(
+                        "إدارة كلمة المرور لحسابات Google/Microsoft تتم من مزود الهوية.",
+                        "Password management for Google/Microsoft accounts is handled by the identity provider.",
+                        arabic_default,
+                    )
+                )
+
+        if can_write_settings:
+            st.markdown(f"### {bi('إدارة الحسابات', 'Account Administration', arabic_default)}")
+            with st.expander(bi("إنشاء مستخدم محلي", "Create Local User", arabic_default), expanded=False):
+                with st.form("create_local_user_form"):
+                    new_user_id = st.text_input(bi("معرف المستخدم", "User ID", arabic_default)).strip().lower()
+                    new_display_name = st.text_input(bi("الاسم المعروض", "Display Name", arabic_default)).strip()
+                    new_role = st.selectbox(bi("الدور", "Role", arabic_default), options=list(ROLE_PERMISSIONS.keys()))
+                    new_status = st.selectbox(
+                        bi("الحالة", "Status", arabic_default),
+                        options=["active", "inactive"],
+                        format_func=lambda v: bi("نشط", "Active", arabic_default) if v == "active" else bi("غير نشط", "Inactive", arabic_default),
+                    )
+                    new_password = st.text_input(bi("كلمة المرور المؤقتة", "Temporary password", arabic_default), type="password")
+                    new_mfa_required = st.checkbox(bi("تفعيل TOTP", "Require TOTP", arabic_default), value=False)
+                    new_totp_secret = st.text_input(
+                        bi("سر TOTP (Base32)", "TOTP secret (Base32)", arabic_default),
+                        disabled=not new_mfa_required,
+                    ).strip()
+                    create_submit = st.form_submit_button(ui("إنشاء المستخدم", "Create User", arabic_default), type="primary")
+                if create_submit:
+                    if not new_user_id or not new_display_name:
+                        st.error(bi("معرف المستخدم والاسم مطلوبان.", "User ID and display name are required.", arabic_default))
+                    elif len(new_password) < 8:
+                        st.error(bi("كلمة المرور المؤقتة يجب أن تكون 8 أحرف على الأقل.", "Temporary password must be at least 8 characters.", arabic_default))
+                    elif new_mfa_required and not new_totp_secret:
+                        st.error(bi("سر TOTP مطلوب عند تفعيل MFA.", "A TOTP secret is required when MFA is enabled.", arabic_default))
+                    elif require_active_action("settings_write", "create_user"):
+                        ok_new, msg_new, _ = create_local_user(
+                            conn,
+                            user_id=new_user_id,
+                            display_name=new_display_name,
+                            role=new_role,
+                            password_hash=hash_password_pbkdf2(new_password),
+                            status=new_status,
+                            mfa_required=new_mfa_required,
+                            totp_secret=_normalize_totp_secret(new_totp_secret) if new_mfa_required else None,
+                        )
+                        if ok_new:
+                            append_audit_event(
+                                action="create_user",
+                                result="success",
+                                actor_user_id=current_user,
+                                actor_role=role,
+                                details={"target_user_id": new_user_id, "target_role": new_role, "mfa_required": new_mfa_required},
+                            )
+                            st.success(bi("تم إنشاء المستخدم المحلي.", "Local user created.", arabic_default))
+                            st.rerun()
+                        else:
+                            append_audit_event(
+                                action="create_user",
+                                result="failure" if msg_new.startswith("DB_") else "denied",
+                                actor_user_id=current_user,
+                                actor_role=role,
+                                details={"target_user_id": new_user_id, "reason": msg_new},
+                            )
+                            render_mutation_error(msg_new, arabic_default)
+
+            users_for_admin = list_users(conn)
+            user_options = {f"{u['display_name']} ({u['user_id']})": u for u in users_for_admin}
+            if user_options:
+                selected_admin_label = st.selectbox(
+                    bi("اختر مستخدماً للإدارة", "Select user to manage", arabic_default),
+                    options=list(user_options.keys()),
+                )
+                managed_user = user_options[selected_admin_label]
+                is_local_managed = str(managed_user.get("auth_provider", "local")) == "local"
+                with st.form("manage_user_form"):
+                    managed_role = st.selectbox(
+                        bi("الدور", "Role", arabic_default),
+                        options=list(ROLE_PERMISSIONS.keys()),
+                        index=list(ROLE_PERMISSIONS.keys()).index(str(managed_user.get("role", "operator"))),
+                    )
+                    managed_status = st.selectbox(
+                        bi("الحالة", "Status", arabic_default),
+                        options=["active", "inactive"],
+                        index=0 if str(managed_user.get("status", "active")) == "active" else 1,
+                        format_func=lambda v: bi("نشط", "Active", arabic_default) if v == "active" else bi("غير نشط", "Inactive", arabic_default),
+                    )
+                    managed_mfa_required = st.checkbox(
+                        bi("تفعيل TOTP المحلي", "Require local TOTP", arabic_default),
+                        value=bool(int(managed_user.get("mfa_required", 0))),
+                        disabled=not is_local_managed,
+                    )
+                    managed_totp_secret = st.text_input(
+                        bi("سر TOTP (Base32)", "TOTP secret (Base32)", arabic_default),
+                        value=str(managed_user.get("totp_secret") or ""),
+                        disabled=not is_local_managed or not managed_mfa_required,
+                    ).strip()
+                    managed_reset_password = st.text_input(
+                        bi("إعادة تعيين كلمة المرور", "Reset password", arabic_default),
+                        type="password",
+                        disabled=not is_local_managed,
+                    )
+                    manage_submit = st.form_submit_button(ui("حفظ تغييرات الحساب", "Save Account Changes", arabic_default), type="primary")
+                if manage_submit and require_active_action("settings_write", "manage_user"):
+                    role_ok, role_msg, _ = set_user_role(conn, str(managed_user["user_id"]), managed_role)
+                    status_ok, status_msg, _ = set_user_status(conn, str(managed_user["user_id"]), managed_status)
+                    manage_error = ""
+                    if not role_ok:
+                        manage_error = role_msg
+                    elif not status_ok:
+                        manage_error = status_msg
+                    else:
+                        if is_local_managed:
+                            totp_ok, totp_msg, _ = set_local_totp_requirement(
+                                conn,
+                                str(managed_user["user_id"]),
+                                mfa_required=managed_mfa_required,
+                                totp_secret=_normalize_totp_secret(managed_totp_secret) if managed_mfa_required else None,
+                            )
+                            if not totp_ok:
+                                manage_error = totp_msg
+                            elif managed_reset_password.strip() and len(managed_reset_password.strip()) < 8:
+                                manage_error = bi(
+                                    "كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل.",
+                                    "Reset password must be at least 8 characters.",
+                                    arabic_default,
+                                )
+                            elif managed_reset_password.strip():
+                                pw_ok, pw_msg, _ = reset_local_user_password(
+                                    conn,
+                                    str(managed_user["user_id"]),
+                                    password_hash=hash_password_pbkdf2(managed_reset_password.strip()),
+                                )
+                                if not pw_ok:
+                                    manage_error = pw_msg
+                    if manage_error:
+                        append_audit_event(
+                            action="manage_user",
+                            result="failure" if str(manage_error).startswith("DB_") else "denied",
+                            actor_user_id=current_user,
+                            actor_role=role,
+                            details={"target_user_id": managed_user["user_id"], "reason": manage_error},
+                        )
+                        if str(manage_error).startswith("DB_"):
+                            render_mutation_error(manage_error, arabic_default)
+                        else:
+                            st.error(str(manage_error))
+                    else:
+                        append_audit_event(
+                            action="manage_user",
+                            result="success",
+                            actor_user_id=current_user,
+                            actor_role=role,
+                            details={
+                                "target_user_id": managed_user["user_id"],
+                                "role": managed_role,
+                                "status": managed_status,
+                                "mfa_required": managed_mfa_required if is_local_managed else None,
+                                "password_reset": bool(managed_reset_password.strip()) if is_local_managed else False,
+                            },
+                        )
+                        st.success(bi("تم حفظ تغييرات الحساب.", "Account changes saved.", arabic_default))
+                        st.rerun()
+
         st.markdown(f"### {bi('دليل المستخدمين', 'User Directory', arabic_default)}")
         st.dataframe(
             [
@@ -2780,6 +3111,11 @@ elif selected_nav == "settings":
                     bi("المعرف", "User ID", arabic_default): u["user_id"],
                     bi("الاسم", "Display Name", arabic_default): u["display_name"],
                     bi("الموفر", "Provider", arabic_default): u.get("auth_provider", "local"),
+                    bi("MFA", "MFA", arabic_default): (
+                        "TOTP"
+                        if int(u.get("mfa_required", 0)) == 1 and str(u.get("mfa_type", "none")) == "totp"
+                        else str(u.get("mfa_type", "none"))
+                    ),
                     bi("الدور", "Role", arabic_default): u["role"],
                     bi("الحالة", "Status", arabic_default): u["status"],
                     bi("فشل المحاولات", "Failed Attempts", arabic_default): u["failed_attempts"],
@@ -2795,6 +3131,19 @@ elif selected_nav == "settings":
         st.dataframe(list_workflow_events(conn, limit=100), width="stretch", hide_index=True)
 
     with right_col:
+        auth_status = auth_status_snapshot(conn)
+        st.markdown(f"### {bi('حالة المصادقة', 'Auth Status', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- {bi('الموفر الحالي', 'Current provider', arabic_default)}: {auth_status['current_provider']}",
+                    f"- {bi('OIDC', 'OIDC', arabic_default)}: {bi('مفعل', 'Configured', arabic_default) if auth_status['oidc_enabled'] else bi('غير مفعل', 'Not configured', arabic_default)}",
+                    f"- {bi('الموفرون', 'Providers', arabic_default)}: {', '.join(auth_status['providers']) if auth_status['providers'] else '-'}",
+                    f"- {bi('مستخدمو TOTP المحلي', 'Local TOTP users', arabic_default)}: {auth_status['local_mfa_enabled']} / {auth_status['local_user_count']}",
+                ]
+            )
+        )
+
         chain_ok, chain_message, chain_count = validate_audit_chain()
         audit_events = read_audit_events()
         kpis = compute_operational_kpis(cases, audit_events)
@@ -2816,7 +3165,7 @@ elif selected_nav == "settings":
             "\n".join(
                 [
                     f"- {bi('كلمات المرور لا تحفظ كنص خام، بل كـ PBKDF2 hashes.', 'Passwords are never stored in plaintext; PBKDF2 hashes are stored instead.', arabic_default)}",
-                    f"- {bi('مستخدمو الدليل المحلي يمكن فرض TOTP MFA عليهم عبر secrets.toml.', 'Local directory users can be forced through TOTP MFA via secrets.toml.', arabic_default)}",
+                    f"- {bi('مستخدمو الدليل المحلي يمكن فرض TOTP MFA عليهم من النظام أو من ملف الأسرار.', 'Local directory users can be forced through TOTP MFA from the app or secrets bootstrap.', arabic_default)}",
                     f"- {bi('تسجيل الدخول عبر Google/Microsoft يستخدم OIDC، وMFA يدار من مزود الهوية.', 'Google/Microsoft sign-in uses OIDC, and MFA is managed by the identity provider.', arabic_default)}",
                     f"- {bi('بعد 5 محاولات فاشلة يتم قفل الحساب 15 دقيقة.', 'After 5 failed attempts, the account is locked for 15 minutes.', arabic_default)}",
                     f"- {bi('الجلسات تنتهي بالخمول وبحد أقصى زمني.', 'Sessions expire on idle timeout and maximum duration.', arabic_default)}",

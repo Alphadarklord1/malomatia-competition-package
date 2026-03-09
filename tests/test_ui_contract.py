@@ -65,6 +65,8 @@ def test_rag_assistant_contract_present() -> None:
     assert "rag_query" in source
     assert "Test AI" in source
     assert "What It Cannot Do" in source
+    assert "Knowledge Sources" in source
+    assert "RAG Evaluation" in source
 
 
 def test_real_auth_directory_contract_present() -> None:
@@ -73,7 +75,12 @@ def test_real_auth_directory_contract_present() -> None:
     assert "record_login_failure" in source
     assert "record_login_success" in source
     assert "upsert_external_user" in source
+    assert "create_local_user" in source
+    assert "reset_local_user_password" in source
+    assert "set_local_totp_requirement" in source
     assert "User Directory" in source
+    assert "Auth Status" in source
+    assert "Account Administration" in source
     assert "Encryption & Security Policies" in source
     assert "Verification Code" in source
     assert "Single Sign-On" in source

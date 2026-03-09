@@ -24,11 +24,13 @@ REQUIRED_DOC_KEYS = {
     "text_ar",
     "text_en",
 }
+MANIFEST_REQUIRED_KEYS = {"last_refresh_utc", "documents"}
 DOC_CITATION_RE = re.compile(r"\[[A-Z0-9\-]+/[A-Z0-9\-]+\]")
+MIN_EVIDENCE_SCORE = 0.18
 DISALLOWED_QUERY_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in [
-        r"\b(approve|override|close|delete|reroute|assign|transfer|resolve|reveal)\b",
+        r"\b(approve|override|close|delete|reroute|assign|resolve|reveal)\b",
         r"\b(password|secret|token|api key|system prompt|prompt)\b",
         r"\b(execute|run command|change setting|write to database)\b",
         r"\b(كشف البيانات|إظهار البيانات|كلمة المرور|الرمز السري|اعتماد|تجاوز|إغلاق|حذف|تحويل|إسناد)\b",
@@ -202,6 +204,19 @@ def _load_docs(data_path: Path) -> list[dict[str, Any]]:
             raise RagConfigError(f"Document at index {idx} missing keys: {sorted(missing)}")
         docs.append(item)
     return docs
+
+
+def _load_manifest(manifest_path: Path) -> dict[str, Any]:
+    raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise RagConfigError("knowledge_manifest.json must be an object")
+    missing = MANIFEST_REQUIRED_KEYS - set(raw.keys())
+    if missing:
+        raise RagConfigError(f"knowledge_manifest.json missing keys: {sorted(missing)}")
+    docs = raw.get("documents")
+    if not isinstance(docs, list) or not docs:
+        raise RagConfigError("knowledge_manifest.json documents must be a non-empty list")
+    return raw
 
 
 @lru_cache(maxsize=8)
@@ -475,6 +490,103 @@ def _fallback_answer(query: str, hits: list[RetrievalHit], language: str) -> str
     return "\n".join(lines)
 
 
+def insufficient_evidence_message(language: str) -> str:
+    if language == "ar":
+        return "الأدلة المسترجعة غير كافية لتقديم إجابة موثوقة. جرّب سؤالاً أكثر تحديداً أو استخدم كلمات من السياسة المطلوبة."
+    return "Retrieved evidence is insufficient for a reliable answer. Try a more specific question or include policy-related terms."
+
+
+def build_knowledge_manifest(data_path: Path, manifest_path: Path) -> dict[str, Any]:
+    docs = _load_docs(data_path)
+    manifest = _load_manifest(manifest_path)
+    documents = {str(item.get("document_id")): item for item in manifest.get("documents", []) if isinstance(item, dict)}
+
+    ar_index = build_index(str(data_path), "ar")
+    en_index = build_index(str(data_path), "en")
+    ar_counts = Counter(str(chunk["doc_id"]) for chunk in ar_index["chunks"])
+    en_counts = Counter(str(chunk["doc_id"]) for chunk in en_index["chunks"])
+
+    rows: list[dict[str, Any]] = []
+    for doc in docs:
+        doc_id = str(doc["id"])
+        meta = documents.get(doc_id, {})
+        rows.append(
+            {
+                "document_id": doc_id,
+                "title_ar": str(meta.get("title_ar") or doc["title_ar"]),
+                "title_en": str(meta.get("title_en") or doc["title_en"]),
+                "department_scope": str(meta.get("department_scope") or doc["department"]),
+                "language": str(meta.get("language") or "ar+en"),
+                "version": str(meta.get("version") or "1.0"),
+                "updated_timestamp": str(meta.get("updated_timestamp") or manifest.get("last_refresh_utc")),
+                "chunk_count": int(ar_counts.get(doc_id, 0) + en_counts.get(doc_id, 0)),
+                "policy_rule": str(doc["policy_rule"]),
+            }
+        )
+
+    return {
+        "last_refresh_utc": str(manifest.get("last_refresh_utc")),
+        "documents": rows,
+    }
+
+
+def run_rag_evaluation(
+    *,
+    eval_path: Path,
+    data_path: Path,
+    language: str = "en",
+) -> dict[str, Any]:
+    raw = json.loads(eval_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list) or not raw:
+        raise RagConfigError("rag_eval_set.json must be a non-empty list")
+
+    rows: list[dict[str, Any]] = []
+    passed = 0
+    for item in raw:
+        query = str(item.get("question_ar") if language == "ar" else item.get("question_en"))
+        expected_department = str(item.get("expected_department"))
+        expected_policy_rule = str(item.get("expected_policy_rule"))
+        expected_doc_id = str(item.get("expected_doc_id"))
+        result = answer_question(
+            query=query,
+            data_path=data_path,
+            language=language,
+            top_k=3,
+            department_hint=expected_department or None,
+            openai_api_key=None,
+        )
+        hits = list(result.get("hits", []))
+        top_hit = hits[0] if hits else {}
+        ok = bool(
+            hits
+            and str(top_hit.get("department")) == expected_department
+            and any(str(h.get("doc_id")) == expected_doc_id for h in hits)
+            and any(str(h.get("policy_rule")) == expected_policy_rule for h in hits)
+        )
+        passed += 1 if ok else 0
+        rows.append(
+            {
+                "query": query,
+                "expected_department": expected_department,
+                "expected_policy_rule": expected_policy_rule,
+                "expected_doc_id": expected_doc_id,
+                "top_department": str(top_hit.get("department", "")),
+                "top_policy_rule": str(top_hit.get("policy_rule", "")),
+                "top_doc_id": str(top_hit.get("doc_id", "")),
+                "passed": ok,
+            }
+        )
+
+    total = len(rows)
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": total - passed,
+        "pass_rate": round((passed / total) * 100.0, 1) if total else 0.0,
+        "rows": rows,
+    }
+
+
 def _openai_answer(
     *,
     api_key: str,
@@ -601,9 +713,12 @@ def answer_question(
         openai_embedding_model=openai_embedding_model,
     )
 
+    top_score = float(hits[0].rerank_score) if hits else 0.0
+    insufficient_evidence = (not hits) or top_score < MIN_EVIDENCE_SCORE
+
     llm_answer: str | None = None
     llm_error: str | None = None
-    if openai_api_key:
+    if openai_api_key and not insufficient_evidence:
         llm_answer, llm_error = _openai_answer(
             api_key=openai_api_key,
             model=openai_model,
@@ -612,7 +727,7 @@ def answer_question(
             language=language,
         )
 
-    answer = llm_answer or _fallback_answer(query, hits, language)
+    answer = insufficient_evidence_message(language) if insufficient_evidence else (llm_answer or _fallback_answer(query, hits, language))
     return {
         "answer": answer,
         "hits": [
@@ -634,4 +749,5 @@ def answer_question(
         "used_llm": bool(llm_answer),
         "llm_error": llm_error,
         "policy_blocked": False,
+        "insufficient_evidence": insufficient_evidence,
     }

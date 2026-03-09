@@ -92,6 +92,8 @@ Never commit real secrets.
 12. Notifications show and acknowledge works for supervisor/auditor.
 13. Role restrictions are enforced (operator/auditor cannot run unauthorized writes).
 14. Audit export works for supervisor/auditor.
+15. Settings page shows Auth Status, My Account, and Account Administration sections.
+16. Knowledge Assistant shows knowledge sources and RAG evaluation summary.
 
 ## 5. Local vs Cloud Secrets Handling
 

@@ -1,0 +1,58 @@
+[
+  {
+    "question_ar": "اقامتي تنتهي غداً، ما الإدارة المناسبة وما القاعدة؟",
+    "question_en": "My residency expires tomorrow. Which department should handle it and what rule applies?",
+    "expected_department": "Immigration",
+    "expected_policy_rule": "PR-17",
+    "expected_doc_id": "DOC-IMM-01"
+  },
+  {
+    "question_ar": "ما هي مهلة SLA للحالات العاجلة؟",
+    "question_en": "What is the SLA for urgent cases?",
+    "expected_department": "Operations",
+    "expected_policy_rule": "PR-SLA-04",
+    "expected_doc_id": "DOC-SLA-01"
+  },
+  {
+    "question_ar": "شكوى عن تأخر جمع النفايات في الحي، أين تذهب؟",
+    "question_en": "Complaint about delayed waste collection in our area. Which team should get it?",
+    "expected_department": "Municipal",
+    "expected_policy_rule": "PR-22",
+    "expected_doc_id": "DOC-MUN-01"
+  },
+  {
+    "question_ar": "أحتاج نقل ملكية سيارة هذا الأسبوع، ما السياسة؟",
+    "question_en": "I need to transfer vehicle ownership this week. What policy applies?",
+    "expected_department": "Licensing",
+    "expected_policy_rule": "PR-31",
+    "expected_doc_id": "DOC-LIC-01"
+  },
+  {
+    "question_ar": "طلب رخصة تجارية جديدة في المنطقة الصناعية هذا الأسبوع.",
+    "question_en": "Request for a new commercial shop license in the industrial area this week.",
+    "expected_department": "Licensing",
+    "expected_policy_rule": "PR-35",
+    "expected_doc_id": "DOC-LIC-02"
+  },
+  {
+    "question_ar": "متى يجب تحويل الحالة إلى مراجعة بشرية؟",
+    "question_en": "When should a case be transferred to human review?",
+    "expected_department": "Human Review",
+    "expected_policy_rule": "PR-HITL-01",
+    "expected_doc_id": "DOC-GOV-01"
+  },
+  {
+    "question_ar": "ما سياسة إخفاء البيانات الحساسة؟",
+    "question_en": "What is the policy for masking sensitive data?",
+    "expected_department": "Operations",
+    "expected_policy_rule": "PR-PRIV-09",
+    "expected_doc_id": "DOC-PRIV-01"
+  },
+  {
+    "question_ar": "كيف يضمن النظام سلامة سجل التدقيق؟",
+    "question_en": "How does the system protect audit-log integrity?",
+    "expected_department": "Operations",
+    "expected_policy_rule": "PR-AUD-03",
+    "expected_doc_id": "DOC-AUD-01"
+  }
+]

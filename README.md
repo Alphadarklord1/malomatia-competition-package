@@ -3,10 +3,11 @@
 Internal pilot prototype for Qatar public-service AI triage operations with:
 
 - authentication + RBAC + session safety
-- persisted user directory with hashed passwords, lockout policy, local TOTP MFA, and optional OIDC SSO
+- persisted user directory with hashed passwords, lockout policy, local TOTP MFA, optional OIDC SSO, and supervisor account management
 - privacy masking + audit chain logging
 - SQLite persistence + schema migrations
 - workflow lifecycle + SLA monitoring
+- manifest-backed RAG knowledge management + benchmark evaluation
 - Arabic-first single-language mode toggle (`ar`/`en`)
 
 ## Deterministic Startup
@@ -42,6 +43,7 @@ Optional auth upgrades:
 - Local 2-step verification: add `totp_secret` per user in `auth_users`
 - Google / Microsoft SSO: configure `[auth]`, `[auth.google]`, `[auth.microsoft]`
 - OIDC role mapping: configure `[oidc_roles]` lists for supervisors and auditors
+- Supervisors can create local users, reset passwords, set roles/status, and manage local TOTP from the Settings page
 
 For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 
@@ -60,6 +62,8 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 ## Session 3 RAG Deliverable
 
 - Domain data source: `/Users/armankhan/Documents/malomatia-competition-package/domain_knowledge.json`
+- Knowledge manifest: `/Users/armankhan/Documents/malomatia-competition-package/knowledge_manifest.json`
+- Evaluation set: `/Users/armankhan/Documents/malomatia-competition-package/rag_eval_set.json`
 - Retrieval engine: `/Users/armankhan/Documents/malomatia-competition-package/rag_engine.py`
 - Implemented pipeline:
   - chunking (token-window with overlap)
@@ -67,6 +71,8 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
   - top-k retrieval by cosine similarity
   - rule-aware reranking (keyword/policy/department boosts)
   - grounded response with DOC/CHUNK citations
+  - manifest-backed knowledge source inventory
+  - benchmark evaluation with pass-rate summary
   - in-app before/after comparison (`Without Retrieval` vs `With RAG`)
 - Optional LLM synthesis:
   - add `openai_api_key` to secrets for generated grounded answers
@@ -138,7 +144,7 @@ conn.close()
 PY
 ```
 
-Expected: `schema_version= 6`
+Expected: `schema_version= 7`
 
 ## DB Lock Troubleshooting
 
@@ -170,9 +176,10 @@ ps aux | rg streamlit
 4. Workflow actions respect RBAC and are audited.
 5. Search/filter/pagination behavior is deterministic.
 6. Notifications and saved views work per role/user rules.
-7. Existing `triage.db` migrates to schema v6 safely.
+7. Existing `triage.db` migrates to schema v7 safely.
 8. Local MFA and optional Google/Microsoft SSO are configured correctly for the target environment.
-9. `./run_validation.sh` passes.
+9. RAG manifest and evaluation set are visible and passing.
+10. `./run_validation.sh` passes.
 
 ## Shareable Deployment
 

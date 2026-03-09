@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import uuid
 from pathlib import Path
 
 from storage import (
@@ -15,7 +16,7 @@ from storage import (
     seed_cases_if_empty,
     transition_case_state,
 )
-from rag_engine import build_index
+from rag_engine import build_index, build_knowledge_manifest, run_rag_evaluation
 
 
 def fail(message: str) -> int:
@@ -28,7 +29,9 @@ def main() -> int:
     schema = base / "schema.sql"
     data = base / "example_data.json"
     kb = base / "domain_knowledge.json"
-    db_path = Path("/tmp/malomatia_validation.db")
+    manifest = base / "knowledge_manifest.json"
+    rag_eval = base / "rag_eval_set.json"
+    db_path = Path(f"/tmp/malomatia_validation_{uuid.uuid4().hex}.db")
     if db_path.exists():
         db_path.unlink()
 
@@ -121,6 +124,7 @@ def main() -> int:
             "def render_pagination_controls(",
             "Domain RAG Assistant",
             "from rag_engine import",
+            "Auth Status",
         ]
         for snippet in required_ui_contract:
             if snippet not in app_source:
@@ -141,9 +145,24 @@ def main() -> int:
 
         if not kb.exists():
             return fail("domain_knowledge.json is missing")
+        if not manifest.exists():
+            return fail("knowledge_manifest.json is missing")
+        if not rag_eval.exists():
+            return fail("rag_eval_set.json is missing")
         kb_index = build_index(str(kb), "en")
         if len(kb_index.get("chunks", [])) <= 0:
             return fail("RAG knowledge index has no chunks")
+        manifest_info = build_knowledge_manifest(kb, manifest)
+        if not manifest_info.get("documents"):
+            return fail("knowledge manifest has no documents")
+        eval_summary = run_rag_evaluation(eval_path=rag_eval, data_path=kb, language="en")
+        if eval_summary.get("pass_rate", 0.0) < 75.0:
+            return fail("RAG evaluation pass rate below threshold")
+
+        secrets_example = (base / ".streamlit" / "secrets.example.toml").read_text(encoding="utf-8")
+        for snippet in ("[auth.google]", "[auth.microsoft]", "[oidc_roles]"):
+            if snippet not in secrets_example:
+                return fail(f"OIDC secrets template missing snippet: {snippet}")
 
         required_tables = {"saved_views", "notifications"}
         found_tables = {

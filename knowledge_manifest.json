@@ -1,0 +1,77 @@
+{
+  "last_refresh_utc": "2026-03-09T00:00:00Z",
+  "documents": [
+    {
+      "document_id": "DOC-IMM-01",
+      "title_ar": "سياسة تجديد الإقامة العاجلة",
+      "title_en": "Urgent Residency Renewal Policy",
+      "department_scope": "Immigration",
+      "language": "ar+en",
+      "version": "1.0",
+      "updated_timestamp": "2026-03-09T00:00:00Z"
+    },
+    {
+      "document_id": "DOC-MUN-01",
+      "title_ar": "سياسة شكاوى الخدمات البلدية",
+      "title_en": "Municipal Service Complaint Policy",
+      "department_scope": "Municipal",
+      "language": "ar+en",
+      "version": "1.0",
+      "updated_timestamp": "2026-03-09T00:00:00Z"
+    },
+    {
+      "document_id": "DOC-LIC-01",
+      "title_ar": "سياسة نقل ملكية المركبات",
+      "title_en": "Vehicle Ownership Transfer Policy",
+      "department_scope": "Licensing",
+      "language": "ar+en",
+      "version": "1.0",
+      "updated_timestamp": "2026-03-09T00:00:00Z"
+    },
+    {
+      "document_id": "DOC-LIC-02",
+      "title_ar": "سياسة إصدار الرخص التجارية",
+      "title_en": "Commercial License Issuance Policy",
+      "department_scope": "Licensing",
+      "language": "ar+en",
+      "version": "1.0",
+      "updated_timestamp": "2026-03-09T00:00:00Z"
+    },
+    {
+      "document_id": "DOC-GOV-01",
+      "title_ar": "إطار التصعيد البشري",
+      "title_en": "Human-in-the-Loop Escalation Framework",
+      "department_scope": "Human Review",
+      "language": "ar+en",
+      "version": "1.0",
+      "updated_timestamp": "2026-03-09T00:00:00Z"
+    },
+    {
+      "document_id": "DOC-SLA-01",
+      "title_ar": "سياسة اتفاقيات مستوى الخدمة",
+      "title_en": "Service-Level Agreement Policy",
+      "department_scope": "Operations",
+      "language": "ar+en",
+      "version": "1.0",
+      "updated_timestamp": "2026-03-09T00:00:00Z"
+    },
+    {
+      "document_id": "DOC-PRIV-01",
+      "title_ar": "سياسة الخصوصية وإخفاء البيانات",
+      "title_en": "Privacy and Data-Masking Policy",
+      "department_scope": "Operations",
+      "language": "ar+en",
+      "version": "1.0",
+      "updated_timestamp": "2026-03-09T00:00:00Z"
+    },
+    {
+      "document_id": "DOC-AUD-01",
+      "title_ar": "سياسة سجل التدقيق وسلامة السجل",
+      "title_en": "Audit Logging and Integrity Policy",
+      "department_scope": "Operations",
+      "language": "ar+en",
+      "version": "1.0",
+      "updated_timestamp": "2026-03-09T00:00:00Z"
+    }
+  ]
+}

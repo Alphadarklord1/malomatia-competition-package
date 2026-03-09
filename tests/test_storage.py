@@ -7,6 +7,7 @@ from storage import (
     bootstrap_auth_users,
     ack_notification,
     approve_case,
+    create_local_user,
     connect_db,
     delete_saved_view,
     ensure_schema,
@@ -17,7 +18,11 @@ from storage import (
     list_users,
     record_login_failure,
     record_login_success,
+    reset_local_user_password,
     seed_cases_if_empty,
+    set_local_totp_requirement,
+    set_user_role,
+    set_user_status,
     upsert_notification,
     upsert_saved_view,
 )
@@ -178,6 +183,7 @@ def test_auth_user_bootstrap_and_login_tracking(tmp_path):
                     "role": "operator",
                     "password_hash": "pbkdf2_sha256$210000$abc$def",
                     "status": "active",
+                    "totp_secret": "JBSWY3DPEHPK3PXP",
                 }
             },
         )
@@ -186,6 +192,8 @@ def test_auth_user_bootstrap_and_login_tracking(tmp_path):
         assert len(users) == 1
         assert users[0]["display_name"] == "Operator Demo"
         assert users[0]["auth_provider"] == "local"
+        assert int(users[0]["mfa_required"]) == 1
+        assert users[0]["mfa_type"] == "totp"
 
         ok, msg, user = record_login_failure(conn, "operator_demo", lockout_after=2, lockout_minutes=15)
         assert ok, msg
@@ -225,9 +233,52 @@ def test_external_user_upsert_sets_provider_and_managed_hash(tmp_path):
         assert user is not None
         assert user["auth_provider"] == "google"
         assert user["password_hash"] == "oidc$managed"
+        assert user["mfa_type"] == "provider"
 
         stored = get_user(conn, "user@example.com")
         assert stored is not None
         assert stored["auth_provider"] == "google"
+    finally:
+        conn.close()
+
+
+def test_local_user_admin_operations_work(tmp_path):
+    conn = connect_db(tmp_path / "user_admin.db")
+    try:
+        ensure_schema(conn, SCHEMA_PATH)
+        ok, msg, user = create_local_user(
+            conn,
+            user_id="new_user",
+            display_name="New User",
+            role="operator",
+            password_hash="pbkdf2_sha256$210000$abc$def",
+            status="active",
+            mfa_required=False,
+            totp_secret=None,
+        )
+        assert ok, msg
+        assert user is not None
+        assert user["auth_provider"] == "local"
+
+        ok, msg, user = set_user_role(conn, "new_user", "supervisor")
+        assert ok, msg
+        assert user is not None
+        assert user["role"] == "supervisor"
+
+        ok, msg, user = set_user_status(conn, "new_user", "inactive")
+        assert ok, msg
+        assert user is not None
+        assert user["status"] == "inactive"
+
+        ok, msg, user = set_local_totp_requirement(conn, "new_user", mfa_required=True, totp_secret="JBSWY3DPEHPK3PXP")
+        assert ok, msg
+        assert user is not None
+        assert int(user["mfa_required"]) == 1
+        assert user["mfa_type"] == "totp"
+
+        ok, msg, user = reset_local_user_password(conn, "new_user", password_hash="pbkdf2_sha256$210000$xyz$123")
+        assert ok, msg
+        assert user is not None
+        assert user["password_hash"] == "pbkdf2_sha256$210000$xyz$123"
     finally:
         conn.close()
