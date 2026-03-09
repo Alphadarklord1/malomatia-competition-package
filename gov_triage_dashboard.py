@@ -1548,32 +1548,6 @@ if selected_nav == "dashboard":
             dept_key = str(case.get("assigned_team") or case["department_en"])
             dept_counts[dept_key] = dept_counts.get(dept_key, 0) + 1
 
-        s_col, d_col = st.columns(2)
-        s_col.markdown(f"#### {bi('توزيع الحالات حسب الحالة', 'Cases by State', arabic_default)}")
-        s_col.dataframe(
-            [
-                {
-                    bi("الحالة", "State", arabic_default): state,
-                    bi("العدد", "Count", arabic_default): count,
-                }
-                for state, count in sorted(state_counts.items())
-            ],
-            width="stretch",
-            hide_index=True,
-        )
-        d_col.markdown(f"#### {bi('توزيع الحالات حسب الطابور', 'Cases by Queue', arabic_default)}")
-        d_col.dataframe(
-            [
-                {
-                    bi("الطابور", "Queue", arabic_default): queue_name,
-                    bi("العدد", "Count", arabic_default): count,
-                }
-                for queue_name, count in sorted(dept_counts.items())
-            ],
-            width="stretch",
-            hide_index=True,
-        )
-
         escalated_cases = [c for c in cases if str(c.get("state")) == "ESCALATED"]
         now_ts = utc_now()
         aging = {"0-1h": 0, "1-4h": 0, "4h+": 0}
@@ -1603,65 +1577,108 @@ if selected_nav == "dashboard":
                     bi("آخر 24 ساعة", "Last 24h", arabic_default): recent,
                 }
             )
-
-        e_col, t_col = st.columns(2)
-        e_col.markdown(f"#### {bi('تقادم التصعيدات', 'Escalation Aging', arabic_default)}")
-        e_col.dataframe(
+        dashboard_overview_tab, dashboard_trends_tab, dashboard_activity_tab = st.tabs(
             [
-                {
-                    bi("الفئة", "Bucket", arabic_default): bucket,
-                    bi("العدد", "Count", arabic_default): count,
-                }
-                for bucket, count in aging.items()
-            ],
-            width="stretch",
-            hide_index=True,
+                bi("نظرة عامة", "Overview", arabic_default),
+                bi("الاتجاهات", "Trends", arabic_default),
+                bi("النشاط", "Activity", arabic_default),
+            ]
         )
-        t_col.markdown(f"#### {bi('اتجاه الأحمال', 'Backlog Trend', arabic_default)}")
-        t_col.dataframe(trend_rows, width="stretch", hide_index=True)
-
-        st.markdown(f"#### {bi('أحدث أحداث سير العمل', 'Recent Workflow Events', arabic_default)}")
-        st.dataframe(list_workflow_events(conn, limit=20), width="stretch", hide_index=True)
+        with dashboard_overview_tab:
+            s_col, d_col = st.columns(2)
+            s_col.markdown(f"#### {bi('توزيع الحالات حسب الحالة', 'Cases by State', arabic_default)}")
+            s_col.dataframe(
+                [
+                    {
+                        bi("الحالة", "State", arabic_default): state,
+                        bi("العدد", "Count", arabic_default): count,
+                    }
+                    for state, count in sorted(state_counts.items())
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+            d_col.markdown(f"#### {bi('توزيع الحالات حسب الطابور', 'Cases by Queue', arabic_default)}")
+            d_col.dataframe(
+                [
+                    {
+                        bi("الطابور", "Queue", arabic_default): queue_name,
+                        bi("العدد", "Count", arabic_default): count,
+                    }
+                    for queue_name, count in sorted(dept_counts.items())
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+        with dashboard_trends_tab:
+            e_col, t_col = st.columns(2)
+            e_col.markdown(f"#### {bi('تقادم التصعيدات', 'Escalation Aging', arabic_default)}")
+            e_col.dataframe(
+                [
+                    {
+                        bi("الفئة", "Bucket", arabic_default): bucket,
+                        bi("العدد", "Count", arabic_default): count,
+                    }
+                    for bucket, count in aging.items()
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+            t_col.markdown(f"#### {bi('اتجاه الأحمال', 'Backlog Trend', arabic_default)}")
+            t_col.dataframe(trend_rows, width="stretch", hide_index=True)
+        with dashboard_activity_tab:
+            st.markdown(f"#### {bi('أحدث أحداث سير العمل', 'Recent Workflow Events', arabic_default)}")
+            st.dataframe(list_workflow_events(conn, limit=20), width="stretch", hide_index=True)
 
     with right_col:
         audit_events = read_audit_events()
         kpis = compute_operational_kpis(cases, audit_events)
         release_snapshot = beta_readiness_snapshot(conn)
-        st.markdown(f"### {bi('ملخص مؤشرات الأداء', 'KPI Snapshot', arabic_default)}")
         open_alerts_count = len(list_notifications(conn, include_acked=False))
-        st.markdown(
-            "\n".join(
-                [
-                    f"- {bi('متوسط زمن الفرز', 'Avg time to triage', arabic_default)}: {kpis['avg_time_to_triage_minutes']:.1f} {bi('دقيقة', 'min', arabic_default)}",
-                    f"- {bi('متوسط زمن أول إسناد', 'Avg time to first assignment', arabic_default)}: {kpis['avg_time_to_first_assignment_minutes']:.1f} {bi('دقيقة', 'min', arabic_default)}",
-                    f"- {bi('نسبة تجاوز SLA', 'SLA breached %', arabic_default)}: {kpis['sla_breached_pct']:.1f}%",
-                    f"- {bi('معدل التجاوز', 'Override rate', arabic_default)}: {kpis['override_rate_pct']:.1f}%",
-                    f"- {bi('تنبيهات مفتوحة', 'Open alerts', arabic_default)}: {open_alerts_count}",
-                ]
-            )
+        dashboard_side_kpi, dashboard_side_release, dashboard_side_case = st.tabs(
+            [
+                bi("المؤشرات", "KPIs", arabic_default),
+                bi("الإصدار", "Release", arabic_default),
+                bi("الحالة", "Case", arabic_default),
+            ]
         )
-        st.markdown(f"### {bi('حالة الإصدار', 'Release Status', arabic_default)}")
-        st.markdown(
-            "\n".join(
-                [
-                    f"- {bi('الإصدار', 'Version', arabic_default)}: {release_snapshot['app_version']}",
-                    f"- {bi('المرحلة', 'Stage', arabic_default)}: {release_snapshot['release_stage']}",
-                    f"- {bi('التقييم', 'Status', arabic_default)}: {release_status_label(release_snapshot)}",
-                    f"- {bi('إنشاء الحسابات العامة', 'Public signup', arabic_default)}: {bi('مفعل', 'Enabled', arabic_default) if st.session_state.get('security_public_signup_enabled', True) else bi('معطل', 'Disabled', arabic_default)}",
-                ]
+        with dashboard_side_kpi:
+            st.markdown(f"### {bi('ملخص مؤشرات الأداء', 'KPI Snapshot', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"- {bi('متوسط زمن الفرز', 'Avg time to triage', arabic_default)}: {kpis['avg_time_to_triage_minutes']:.1f} {bi('دقيقة', 'min', arabic_default)}",
+                        f"- {bi('متوسط زمن أول إسناد', 'Avg time to first assignment', arabic_default)}: {kpis['avg_time_to_first_assignment_minutes']:.1f} {bi('دقيقة', 'min', arabic_default)}",
+                        f"- {bi('نسبة تجاوز SLA', 'SLA breached %', arabic_default)}: {kpis['sla_breached_pct']:.1f}%",
+                        f"- {bi('معدل التجاوز', 'Override rate', arabic_default)}: {kpis['override_rate_pct']:.1f}%",
+                        f"- {bi('تنبيهات مفتوحة', 'Open alerts', arabic_default)}: {open_alerts_count}",
+                    ]
+                )
             )
-        )
-        st.markdown(f"### {bi('الحالة المحددة', 'Selected Case', arabic_default)}")
-        st.markdown(
-            "\n".join(
-                [
-                    f"- {bi('رقم الحالة', 'Case', arabic_default)}: `{selected_case['case_id']}`",
-                    f"- {bi('النية', 'Intent', arabic_default)}: {field(selected_case, 'intent', arabic_default)}",
-                    f"- {bi('الأولوية', 'Urgency', arabic_default)}: {field(selected_case, 'urgency', arabic_default)}",
-                    f"- {bi('الإدارة', 'Department', arabic_default)}: {field(selected_case, 'department', arabic_default)}",
-                ]
+        with dashboard_side_release:
+            st.markdown(f"### {bi('حالة الإصدار', 'Release Status', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"- {bi('الإصدار', 'Version', arabic_default)}: {release_snapshot['app_version']}",
+                        f"- {bi('المرحلة', 'Stage', arabic_default)}: {release_snapshot['release_stage']}",
+                        f"- {bi('التقييم', 'Status', arabic_default)}: {release_status_label(release_snapshot)}",
+                        f"- {bi('إنشاء الحسابات العامة', 'Public signup', arabic_default)}: {bi('مفعل', 'Enabled', arabic_default) if st.session_state.get('security_public_signup_enabled', True) else bi('معطل', 'Disabled', arabic_default)}",
+                    ]
+                )
             )
-        )
+        with dashboard_side_case:
+            st.markdown(f"### {bi('الحالة المحددة', 'Selected Case', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"- {bi('رقم الحالة', 'Case', arabic_default)}: `{selected_case['case_id']}`",
+                        f"- {bi('النية', 'Intent', arabic_default)}: {field(selected_case, 'intent', arabic_default)}",
+                        f"- {bi('الأولوية', 'Urgency', arabic_default)}: {field(selected_case, 'urgency', arabic_default)}",
+                        f"- {bi('الإدارة', 'Department', arabic_default)}: {field(selected_case, 'department', arabic_default)}",
+                    ]
+                )
+            )
 
 elif selected_nav in {"incoming", "queues"}:
     with main_col:
@@ -2499,14 +2516,6 @@ elif selected_nav == "assistant":
             )
             st.stop()
 
-        st.info(
-            bi(
-                "للعرض السريع: جرّب الاستعلامات الثلاثة، وسجّل الدخول كمشرف لمراجعة الحوكمة والإدارة، ثم افتح أثر الاسترجاع.",
-                "For a fast demo: run the three sample queries, sign in as supervisor to review governance/admin, then open the retrieval trace.",
-                arabic_default,
-            )
-        )
-
         sample_queries = [
             (
                 "sample_rag_1",
@@ -2524,14 +2533,6 @@ elif selected_nav == "assistant":
                 "Request for a new commercial shop license in the industrial area this week",
             ),
         ]
-        st.markdown(f"#### {bi('استعلامات سريعة', 'Quick Queries', arabic_default)}")
-        for sample_id, query_ar, query_en in sample_queries:
-            sample_label = query_ar if arabic_default else query_en
-            if st.button(sample_label, key=sample_id, width="stretch"):
-                st.session_state["rag_query"] = sample_label
-                st.session_state["rag_last_result"] = None
-                st.rerun()
-
         dept_options = ["AUTO", "all", "Immigration", "Municipal", "Licensing", "Human Review", "Operations"]
         dept_labels = {
             "AUTO": bi("تلقائي من الحالة المحددة", "Auto from selected case", arabic_default),
@@ -2543,123 +2544,148 @@ elif selected_nav == "assistant":
             "Operations": bi("العمليات", "Operations", arabic_default),
         }
 
-        with st.expander(bi("إعدادات AI", "AI Runtime Settings", arabic_default), expanded=False):
-            runtime_api_key = st.text_input(
-                bi("OpenAI API Key (جلسة مؤقتة)", "OpenAI API Key (session only)", arabic_default),
-                value=str(st.session_state.get("ai_runtime_api_key", "")),
-                type="password",
-                key="ai_runtime_api_key_input",
-            ).strip()
-            st.session_state["ai_runtime_api_key"] = runtime_api_key
-            model_cols = st.columns(2)
-            st.session_state["ai_runtime_model"] = model_cols[0].text_input(
-                bi("نموذج الإجابة", "Answer model", arabic_default),
-                value=str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")),
-                key="ai_runtime_model_input",
-            ).strip() or "gpt-4o-mini"
-            st.session_state["ai_runtime_embedding_model"] = model_cols[1].text_input(
-                bi("نموذج التمثيل المتجهي", "Embedding model", arabic_default),
-                value=str(st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")),
-                key="ai_runtime_embedding_model_input",
-            ).strip() or "text-embedding-3-small"
-
-            secret_key_exists = bool(str(st.secrets.get("openai_api_key", "")).strip())
-            effective_key = runtime_api_key or str(st.secrets.get("openai_api_key", "")).strip()
-            st.caption(
+        assistant_ask_tab, assistant_results_tab, assistant_knowledge_tab = st.tabs(
+            [
+                bi("اسأل", "Ask", arabic_default),
+                bi("النتائج", "Results", arabic_default),
+                bi("المعرفة", "Knowledge", arabic_default),
+            ]
+        )
+        with assistant_ask_tab:
+            st.info(
                 bi(
-                    "وضع AI: مفعل" if effective_key else "وضع AI: غير مفعل (سيستخدم الاسترجاع المحلي فقط)",
-                    "AI mode: ON" if effective_key else "AI mode: OFF (local retrieval fallback only)",
+                    "للعرض السريع: جرّب الاستعلامات الثلاثة، وسجّل الدخول كمشرف لمراجعة الحوكمة والإدارة، ثم افتح أثر الاسترجاع.",
+                    "For a fast demo: run the three sample queries, sign in as supervisor to review governance/admin, then open the retrieval trace.",
                     arabic_default,
                 )
             )
-            if not runtime_api_key and secret_key_exists:
+            st.markdown(f"#### {bi('استعلامات سريعة', 'Quick Queries', arabic_default)}")
+            for sample_id, query_ar, query_en in sample_queries:
+                sample_label = query_ar if arabic_default else query_en
+                if st.button(sample_label, key=sample_id, width="stretch"):
+                    st.session_state["rag_query"] = sample_label
+                    st.session_state["rag_last_result"] = None
+                    st.rerun()
+
+            with st.expander(bi("إعدادات AI", "AI Runtime Settings", arabic_default), expanded=False):
+                runtime_api_key = st.text_input(
+                    bi("OpenAI API Key (جلسة مؤقتة)", "OpenAI API Key (session only)", arabic_default),
+                    value=str(st.session_state.get("ai_runtime_api_key", "")),
+                    type="password",
+                    key="ai_runtime_api_key_input",
+                ).strip()
+                st.session_state["ai_runtime_api_key"] = runtime_api_key
+                model_cols = st.columns(2)
+                st.session_state["ai_runtime_model"] = model_cols[0].text_input(
+                    bi("نموذج الإجابة", "Answer model", arabic_default),
+                    value=str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")),
+                    key="ai_runtime_model_input",
+                ).strip() or "gpt-4o-mini"
+                st.session_state["ai_runtime_embedding_model"] = model_cols[1].text_input(
+                    bi("نموذج التمثيل المتجهي", "Embedding model", arabic_default),
+                    value=str(st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")),
+                    key="ai_runtime_embedding_model_input",
+                ).strip() or "text-embedding-3-small"
+
+                secret_key_exists = bool(str(st.secrets.get("openai_api_key", "")).strip())
+                effective_key = runtime_api_key or str(st.secrets.get("openai_api_key", "")).strip()
                 st.caption(
                     bi(
-                        "يتم استخدام مفتاح OpenAI من أسرار التطبيق.",
-                        "Using OpenAI key from app secrets.",
+                        "وضع AI: مفعل" if effective_key else "وضع AI: غير مفعل (سيستخدم الاسترجاع المحلي فقط)",
+                        "AI mode: ON" if effective_key else "AI mode: OFF (local retrieval fallback only)",
                         arabic_default,
                     )
                 )
-            st.caption(
-                bi(
-                    "أي مفتاح API يتم إدخاله هنا يبقى ضمن الجلسة الحالية فقط ولا يحفظ كإعداد دائم داخل التطبيق.",
-                    "Any API key entered here is used for the current session only and is not stored as a permanent in-app setting.",
-                    arabic_default,
+                if not runtime_api_key and secret_key_exists:
+                    st.caption(
+                        bi(
+                            "يتم استخدام مفتاح OpenAI من أسرار التطبيق.",
+                            "Using OpenAI key from app secrets.",
+                            arabic_default,
+                        )
+                    )
+                st.caption(
+                    bi(
+                        "أي مفتاح API يتم إدخاله هنا يبقى ضمن الجلسة الحالية فقط ولا يحفظ كإعداد دائم داخل التطبيق.",
+                        "Any API key entered here is used for the current session only and is not stored as a permanent in-app setting.",
+                        arabic_default,
+                    )
+                )
+                effective_key = str(effective_key).strip()
+                key_ok, key_error = (
+                    validate_api_key_format(effective_key) if effective_key else (False, "OPENAI_API_KEY missing")
+                )
+                if effective_key and not key_ok:
+                    st.warning(bi(f"مشكلة في المفتاح: {key_error}", f"API key issue: {key_error}", arabic_default))
+
+                test_cols = st.columns([1.4, 3.6])
+                if test_cols[0].button(ui("اختبار AI", "Test AI", arabic_default), key="ai_runtime_test_btn"):
+                    if not effective_key:
+                        st.session_state["ai_runtime_test_result"] = {
+                            "ok": False,
+                            "embedding_ok": False,
+                            "chat_ok": False,
+                            "error": "OPENAI_API_KEY missing",
+                        }
+                    else:
+                        st.session_state["ai_runtime_test_result"] = test_openai_runtime(
+                            api_key=effective_key,
+                            answer_model=str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")),
+                            embedding_model=str(
+                                st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")
+                            ),
+                        )
+                runtime_test = st.session_state.get("ai_runtime_test_result")
+                if runtime_test:
+                    if runtime_test.get("ok"):
+                        test_cols[1].success(
+                            bi(
+                                "اتصال OpenAI ناجح: التضمين والإجابة يعملان.",
+                                "OpenAI connectivity passed: embeddings and answer model both work.",
+                                arabic_default,
+                            )
+                        )
+                    else:
+                        failure_bits = [
+                            str(runtime_test.get("error") or ""),
+                            str(runtime_test.get("embedding_error") or ""),
+                            str(runtime_test.get("chat_error") or ""),
+                        ]
+                        failure_message = " | ".join(bit for bit in failure_bits if bit)
+                        test_cols[1].error(
+                            bi(
+                                f"فشل اختبار AI: {failure_message or 'unknown error'}",
+                                f"AI runtime test failed: {failure_message or 'unknown error'}",
+                                arabic_default,
+                            )
+                        )
+
+            q_cols = st.columns([4, 1.2, 1.6, 1.1])
+            st.session_state["rag_query"] = q_cols[0].text_input(
+                bi("اسأل سؤالاً تشغيلياً أو سياسياً", "Ask an operational or policy question", arabic_default),
+                value=str(st.session_state.get("rag_query", "")),
+                key="rag_query_input",
+            )
+            st.session_state["rag_top_k"] = int(
+                q_cols[1].selectbox(
+                    bi("Top K", "Top K", arabic_default),
+                    options=[3, 5, 8],
+                    index=[3, 5, 8].index(int(st.session_state.get("rag_top_k", 5)))
+                    if int(st.session_state.get("rag_top_k", 5)) in [3, 5, 8]
+                    else 1,
+                    key="rag_top_k_input",
                 )
             )
-            effective_key = str(effective_key).strip()
-            key_ok, key_error = validate_api_key_format(effective_key) if effective_key else (False, "OPENAI_API_KEY missing")
-            if effective_key and not key_ok:
-                st.warning(bi(f"مشكلة في المفتاح: {key_error}", f"API key issue: {key_error}", arabic_default))
-
-            test_cols = st.columns([1.4, 3.6])
-            if test_cols[0].button(ui("اختبار AI", "Test AI", arabic_default), key="ai_runtime_test_btn"):
-                if not effective_key:
-                    st.session_state["ai_runtime_test_result"] = {
-                        "ok": False,
-                        "embedding_ok": False,
-                        "chat_ok": False,
-                        "error": "OPENAI_API_KEY missing",
-                    }
-                else:
-                    st.session_state["ai_runtime_test_result"] = test_openai_runtime(
-                        api_key=effective_key,
-                        answer_model=str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")),
-                        embedding_model=str(
-                            st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")
-                        ),
-                    )
-            runtime_test = st.session_state.get("ai_runtime_test_result")
-            if runtime_test:
-                if runtime_test.get("ok"):
-                    test_cols[1].success(
-                        bi(
-                            "اتصال OpenAI ناجح: التضمين والإجابة يعملان.",
-                            "OpenAI connectivity passed: embeddings and answer model both work.",
-                            arabic_default,
-                        )
-                    )
-                else:
-                    failure_bits = [
-                        str(runtime_test.get("error") or ""),
-                        str(runtime_test.get("embedding_error") or ""),
-                        str(runtime_test.get("chat_error") or ""),
-                    ]
-                    failure_message = " | ".join(bit for bit in failure_bits if bit)
-                    test_cols[1].error(
-                        bi(
-                            f"فشل اختبار AI: {failure_message or 'unknown error'}",
-                            f"AI runtime test failed: {failure_message or 'unknown error'}",
-                            arabic_default,
-                        )
-                    )
-
-        q_cols = st.columns([4, 1.2, 1.6, 1.1])
-        st.session_state["rag_query"] = q_cols[0].text_input(
-            bi("اسأل سؤالاً تشغيلياً أو سياسياً", "Ask an operational or policy question", arabic_default),
-            value=str(st.session_state.get("rag_query", "")),
-            key="rag_query_input",
-        )
-        st.session_state["rag_top_k"] = int(
-            q_cols[1].selectbox(
-                bi("Top K", "Top K", arabic_default),
-                options=[3, 5, 8],
-                index=[3, 5, 8].index(int(st.session_state.get("rag_top_k", 5)))
-                if int(st.session_state.get("rag_top_k", 5)) in [3, 5, 8]
-                else 1,
-                key="rag_top_k_input",
+            st.session_state["rag_department_hint"] = q_cols[2].selectbox(
+                bi("تقييد الإدارة", "Department scope", arabic_default),
+                options=dept_options,
+                format_func=lambda v: dept_labels.get(v, v),
+                index=dept_options.index(str(st.session_state.get("rag_department_hint", "AUTO")))
+                if str(st.session_state.get("rag_department_hint", "AUTO")) in dept_options
+                else 0,
+                key="rag_department_hint_input",
             )
-        )
-        st.session_state["rag_department_hint"] = q_cols[2].selectbox(
-            bi("تقييد الإدارة", "Department scope", arabic_default),
-            options=dept_options,
-            format_func=lambda v: dept_labels.get(v, v),
-            index=dept_options.index(str(st.session_state.get("rag_department_hint", "AUTO")))
-            if str(st.session_state.get("rag_department_hint", "AUTO")) in dept_options
-            else 0,
-            key="rag_department_hint_input",
-        )
-        ask_clicked = q_cols[3].button(ui("استرجاع", "Retrieve", arabic_default), key="rag_ask_btn")
+            ask_clicked = q_cols[3].button(ui("استرجاع", "Retrieve", arabic_default), key="rag_ask_btn")
 
         if ask_clicked:
             query_text = str(st.session_state.get("rag_query", "")).strip()
@@ -2724,74 +2750,84 @@ elif selected_nav == "assistant":
                     )
 
         result = st.session_state.get("rag_last_result")
-        if result:
-            comparison_cols = st.columns(2)
-            with comparison_cols[0]:
-                st.markdown(f"#### {bi('بدون استرجاع', 'Without Retrieval', arabic_default)}")
-                st.write(baseline_answer(str(st.session_state.get("rag_query", "")), "ar" if arabic_default else "en"))
-            with comparison_cols[1]:
-                st.markdown(f"#### {bi('مع RAG', 'With RAG', arabic_default)}")
-                st.write(
-                    bi(
-                        "إجابة مؤرضة بالمصادر المسترجعة مع تتبع قرار واضح.",
-                        "Grounded answer using retrieved sources with a clear decision trace.",
-                        arabic_default,
-                    )
-                )
-
-            st.markdown(f"#### {bi('الإجابة', 'Answer', arabic_default)}")
-            st.write(str(result.get("answer", "")))
-            if result.get("policy_blocked"):
-                st.warning(
-                    bi(
-                        "تم حظر هذا الطلب لأن المساعد لا ينفذ إجراءات تشغيلية أو يكشف بيانات حساسة.",
-                        "This request was blocked because the assistant cannot execute workflow actions or reveal sensitive data.",
-                        arabic_default,
-                    )
-                )
-            if result.get("llm_error"):
-                st.caption(
-                    bi(
-                        f"ملاحظة LLM: {result['llm_error']}",
-                        f"LLM note: {result['llm_error']}",
-                        arabic_default,
-                    )
-                )
-
-            hits = list(result.get("hits", []))
-            if hits:
-                st.markdown(f"#### {bi('المراجع المسترجعة', 'Retrieved Sources', arabic_default)}")
-                st.dataframe(
-                    [
-                        {
-                            bi("الترتيب", "Rank", arabic_default): h.get("rank"),
-                            bi("الوثيقة", "Document", arabic_default): h.get("doc_id"),
-                            bi("المقطع", "Chunk", arabic_default): h.get("chunk_id"),
-                            bi("العنوان", "Title", arabic_default): h.get("title"),
-                            bi("الإدارة", "Department", arabic_default): h.get("department"),
-                            bi("القاعدة", "Policy Rule", arabic_default): h.get("policy_rule"),
-                            "Score": h.get("rerank_score"),
-                        }
-                        for h in hits
-                    ],
-                    width="stretch",
-                    hide_index=True,
-                )
-                for h in hits:
-                    with st.expander(
-                        f"#{h.get('rank')} {h.get('doc_id')} / {h.get('chunk_id')} - {h.get('title')}",
-                        expanded=False,
-                    ):
-                        st.write(str(h.get("text", "")))
-                        st.caption(
-                            bi(
-                                f"درجة الاسترجاع: {h.get('base_score')} | درجة إعادة الترتيب: {h.get('rerank_score')}",
-                                f"Base score: {h.get('base_score')} | Rerank score: {h.get('rerank_score')}",
-                                arabic_default,
-                            )
+        with assistant_results_tab:
+            if result:
+                comparison_cols = st.columns(2)
+                with comparison_cols[0]:
+                    st.markdown(f"#### {bi('بدون استرجاع', 'Without Retrieval', arabic_default)}")
+                    st.write(baseline_answer(str(st.session_state.get("rag_query", "")), "ar" if arabic_default else "en"))
+                with comparison_cols[1]:
+                    st.markdown(f"#### {bi('مع RAG', 'With RAG', arabic_default)}")
+                    st.write(
+                        bi(
+                            "إجابة مؤرضة بالمصادر المسترجعة مع تتبع قرار واضح.",
+                            "Grounded answer using retrieved sources with a clear decision trace.",
+                            arabic_default,
                         )
+                    )
 
-        with st.expander(bi("مصادر المعرفة", "Knowledge Sources", arabic_default), expanded=False):
+                st.markdown(f"#### {bi('الإجابة', 'Answer', arabic_default)}")
+                st.write(str(result.get("answer", "")))
+                if result.get("policy_blocked"):
+                    st.warning(
+                        bi(
+                            "تم حظر هذا الطلب لأن المساعد لا ينفذ إجراءات تشغيلية أو يكشف بيانات حساسة.",
+                            "This request was blocked because the assistant cannot execute workflow actions or reveal sensitive data.",
+                            arabic_default,
+                        )
+                    )
+                if result.get("llm_error"):
+                    st.caption(
+                        bi(
+                            f"ملاحظة LLM: {result['llm_error']}",
+                            f"LLM note: {result['llm_error']}",
+                            arabic_default,
+                        )
+                    )
+
+                hits = list(result.get("hits", []))
+                if hits:
+                    st.markdown(f"#### {bi('المراجع المسترجعة', 'Retrieved Sources', arabic_default)}")
+                    st.dataframe(
+                        [
+                            {
+                                bi("الترتيب", "Rank", arabic_default): h.get("rank"),
+                                bi("الوثيقة", "Document", arabic_default): h.get("doc_id"),
+                                bi("المقطع", "Chunk", arabic_default): h.get("chunk_id"),
+                                bi("العنوان", "Title", arabic_default): h.get("title"),
+                                bi("الإدارة", "Department", arabic_default): h.get("department"),
+                                bi("القاعدة", "Policy Rule", arabic_default): h.get("policy_rule"),
+                                "Score": h.get("rerank_score"),
+                            }
+                            for h in hits
+                        ],
+                        width="stretch",
+                        hide_index=True,
+                    )
+                    for h in hits:
+                        with st.expander(
+                            f"#{h.get('rank')} {h.get('doc_id')} / {h.get('chunk_id')} - {h.get('title')}",
+                            expanded=False,
+                        ):
+                            st.write(str(h.get("text", "")))
+                            st.caption(
+                                bi(
+                                    f"درجة الاسترجاع: {h.get('base_score')} | درجة إعادة الترتيب: {h.get('rerank_score')}",
+                                    f"Base score: {h.get('base_score')} | Rerank score: {h.get('rerank_score')}",
+                                    arabic_default,
+                                )
+                            )
+            else:
+                st.info(
+                    bi(
+                        "نفذ سؤالاً أولاً لعرض مقارنة الإجابة والمراجع المسترجعة.",
+                        "Run a query first to view the answer comparison and retrieved sources.",
+                        arabic_default,
+                    )
+                )
+
+        with assistant_knowledge_tab:
+            st.markdown(f"#### {bi('مصادر المعرفة', 'Knowledge Sources', arabic_default)}")
             st.caption(
                 bi(
                     f"آخر تحديث للمعرفة: {knowledge_manifest['last_refresh_utc']}",
@@ -2816,33 +2852,53 @@ elif selected_nav == "assistant":
 
     with right_col:
         policy = capability_guide("ar" if arabic_default else "en")
-        st.markdown(f"### {bi('تقييم RAG', 'RAG Evaluation', arabic_default)}")
-        st.markdown(
-            "\n".join(
-                [
-                    f"- {bi('الحالات المختبرة', 'Benchmarks', arabic_default)}: {rag_eval['total']}",
-                    f"- {bi('النجاح', 'Passed', arabic_default)}: {rag_eval['passed']}",
-                    f"- {bi('معدل النجاح', 'Pass rate', arabic_default)}: {rag_eval['pass_rate']}%",
-                ]
-            )
+        assistant_side_eval_tab, assistant_side_guide_tab, assistant_side_trace_tab = st.tabs(
+            [
+                bi("التقييم", "Evaluation", arabic_default),
+                bi("الدليل", "Guide", arabic_default),
+                bi("التتبع", "Trace", arabic_default),
+            ]
         )
-        with st.expander(bi("تفاصيل التقييم", "Evaluation Details", arabic_default), expanded=False):
-            st.dataframe(rag_eval["rows"], width="stretch", hide_index=True)
-        st.markdown(f"### {bi('ما الذي يمكنه فعله', 'What It Can Do', arabic_default)}")
-        st.markdown("\n".join(f"- {item}" for item in policy["can"]))
-        st.markdown(f"### {bi('ما الذي لا يمكنه فعله', 'What It Cannot Do', arabic_default)}")
-        st.markdown("\n".join(f"- {item}" for item in policy["cannot"]))
-        st.markdown(f"### {bi('تدفق RAG', 'RAG Flow', arabic_default)}")
-        st.markdown(
-            "\n".join(
-                [
-                    f"1. {bi('تقسيم سياسات التشغيل إلى مقاطع متداخلة.', 'Chunk policy knowledge into overlapping segments.', arabic_default)}",
-                    f"2. {bi('تمثيل المقاطع متجهياً ثم استرجاع الأعلى صلة.', 'Vectorize chunks and retrieve the most relevant ones.', arabic_default)}",
-                    f"3. {bi('إعادة ترتيب النتائج وتمريرها للإجابة مع المراجع.', 'Re-rank results and answer with citations.', arabic_default)}",
-                ]
+        with assistant_side_eval_tab:
+            st.markdown(f"### {bi('تقييم RAG', 'RAG Evaluation', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"- {bi('الحالات المختبرة', 'Benchmarks', arabic_default)}: {rag_eval['total']}",
+                        f"- {bi('النجاح', 'Passed', arabic_default)}: {rag_eval['passed']}",
+                        f"- {bi('معدل النجاح', 'Pass rate', arabic_default)}: {rag_eval['pass_rate']}%",
+                    ]
+                )
             )
-        )
-        st.markdown(f"### {bi('أثر الاسترجاع', 'Retrieval Trace', arabic_default)}")
+            with st.expander(bi("تفاصيل التقييم", "Evaluation Details", arabic_default), expanded=False):
+                st.dataframe(rag_eval["rows"], width="stretch", hide_index=True)
+        with assistant_side_guide_tab:
+            st.markdown(f"### {bi('ما الذي يمكنه فعله', 'What It Can Do', arabic_default)}")
+            st.markdown("\n".join(f"- {item}" for item in policy["can"]))
+            st.markdown(f"### {bi('ما الذي لا يمكنه فعله', 'What It Cannot Do', arabic_default)}")
+            st.markdown("\n".join(f"- {item}" for item in policy["cannot"]))
+            st.markdown(f"### {bi('تدفق RAG', 'RAG Flow', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"1. {bi('تقسيم سياسات التشغيل إلى مقاطع متداخلة.', 'Chunk policy knowledge into overlapping segments.', arabic_default)}",
+                        f"2. {bi('تمثيل المقاطع متجهياً ثم استرجاع الأعلى صلة.', 'Vectorize chunks and retrieve the most relevant ones.', arabic_default)}",
+                        f"3. {bi('إعادة ترتيب النتائج وتمريرها للإجابة مع المراجع.', 'Re-rank results and answer with citations.', arabic_default)}",
+                    ]
+                )
+            )
+            st.markdown(f"### {bi('قيود النموذج', 'LLM Limitations Guardrails', arabic_default)}")
+            st.markdown(
+                "\n".join(
+                    [
+                        f"- {bi('الإجابة يجب أن تعتمد على المقاطع المسترجعة فقط.', 'Answers must stay grounded in retrieved chunks only.', arabic_default)}",
+                        f"- {bi('عند ضعف الأدلة، يصرح النظام بعدم كفاية المعلومات.', 'When evidence is weak, the assistant states insufficiency.', arabic_default)}",
+                        f"- {bi('المخرجات تعرض مراجع DOC/CHUNK للتحقق التشغيلي.', 'Outputs show DOC/CHUNK citations for operator verification.', arabic_default)}",
+                    ]
+                )
+            )
+        with assistant_side_trace_tab:
+            st.markdown(f"### {bi('أثر الاسترجاع', 'Retrieval Trace', arabic_default)}")
         result = st.session_state.get("rag_last_result")
         hits = list(result.get("hits", [])) if result else []
         if not hits:
@@ -2868,16 +2924,6 @@ elif selected_nav == "assistant":
                 width="stretch",
                 hide_index=True,
             )
-        st.markdown(f"### {bi('قيود النموذج', 'LLM Limitations Guardrails', arabic_default)}")
-        st.markdown(
-            "\n".join(
-                [
-                    f"- {bi('الإجابة يجب أن تعتمد على المقاطع المسترجعة فقط.', 'Answers must stay grounded in retrieved chunks only.', arabic_default)}",
-                    f"- {bi('عند ضعف الأدلة، يصرح النظام بعدم كفاية المعلومات.', 'When evidence is weak, the assistant states insufficiency.', arabic_default)}",
-                    f"- {bi('المخرجات تعرض مراجع DOC/CHUNK للتحقق التشغيلي.', 'Outputs show DOC/CHUNK citations for operator verification.', arabic_default)}",
-                ]
-            )
-        )
 
 elif selected_nav == "notifications":
     with main_col:

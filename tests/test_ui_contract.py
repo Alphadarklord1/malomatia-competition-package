@@ -107,6 +107,13 @@ def test_beta_support_contract_present() -> None:
     source = _source()
     assert "Judge Quick Start" in source
     assert "Guide" in source
+    assert "Overview" in source
+    assert "Trends" in source
+    assert "Activity" in source
+    assert "Results" in source
+    assert "Knowledge" in source
+    assert "Evaluation" in source
+    assert "Trace" in source
     assert "Roles & Governance" in source
     assert "Open Incoming" in source
     assert "Report an Issue or Feedback" in source
