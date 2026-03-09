@@ -22,6 +22,8 @@ This runbook packages the prototype for a shareable judge link while preserving 
    - `gov_triage_dashboard.py`
 5. Deploy.
 
+If the public URL redirects to `share.streamlit.io/-/auth/app`, the app is still protected by Streamlit platform auth. Change the app sharing/access setting to allow judge access with the direct link.
+
 ## 3. Configure Cloud Secrets
 
 Use a production-safe version of `.streamlit/secrets.toml` in the Secrets panel.

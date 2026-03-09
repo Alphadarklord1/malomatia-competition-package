@@ -54,9 +54,37 @@ Required filenames:
 7. `notifications-center.png`
 8. `knowledge-assistant.png`
 
+## Screenshot References
+
+1. Dashboard
+![Dashboard Overview](screenshots/dashboard-overview.png)
+
+2. Incoming Requests
+![Incoming Requests](screenshots/incoming-requests.png)
+
+3. Queues
+![Queues View](screenshots/queues-view.png)
+
+4. Review
+![Review Page](screenshots/review-page.png)
+
+5. Settings / Security
+![Settings Security](screenshots/settings-security.png)
+
+6. Help
+![Help Page](screenshots/help-page.png)
+
+7. Notifications
+![Notifications Center](screenshots/notifications-center.png)
+
+8. Knowledge Assistant
+![Knowledge Assistant](screenshots/knowledge-assistant.png)
+
 ## Notes
 
 - Scope is local and Streamlit Community demo readiness.
 - Production controls (enterprise SSO/KMS/SIEM) remain out of this milestone.
 - Auth state now includes provider-aware local/OIDC users plus managed local TOTP.
 - RAG now exposes corpus manifest and an 8-question benchmark set with pass-rate summary.
+- Screenshot set is now present in the repo and was captured from a clean local authenticated supervisor session.
+- The currently deployed Streamlit URL still redirects through Streamlit platform auth; public judge access still requires the app sharing setting to be switched to anyone with the link.
