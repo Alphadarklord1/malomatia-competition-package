@@ -15,7 +15,15 @@ from typing import Any
 import streamlit as st
 
 from kpi import compute_operational_kpis
-from rag_engine import RagConfigError, answer_question, baseline_answer, build_index
+from rag_engine import (
+    RagConfigError,
+    answer_question,
+    baseline_answer,
+    build_index,
+    capability_guide,
+    test_openai_runtime,
+    validate_api_key_format,
+)
 from storage import (
     ack_notification,
     approve_case,
@@ -114,6 +122,7 @@ def ensure_session_defaults() -> None:
         "ai_runtime_api_key": "",
         "ai_runtime_model": "gpt-4o-mini",
         "ai_runtime_embedding_model": "text-embedding-3-small",
+        "ai_runtime_test_result": None,
         "security_session_idle_minutes": 15,
         "security_session_max_hours": 8,
         "security_audit_retention_days": 90,
@@ -2000,6 +2009,52 @@ elif selected_nav == "assistant":
                         arabic_default,
                     )
                 )
+            effective_key = str(effective_key).strip()
+            key_ok, key_error = validate_api_key_format(effective_key) if effective_key else (False, "OPENAI_API_KEY missing")
+            if effective_key and not key_ok:
+                st.warning(bi(f"مشكلة في المفتاح: {key_error}", f"API key issue: {key_error}", arabic_default))
+
+            test_cols = st.columns([1.4, 3.6])
+            if test_cols[0].button(ui("اختبار AI", "Test AI", arabic_default), key="ai_runtime_test_btn"):
+                if not effective_key:
+                    st.session_state["ai_runtime_test_result"] = {
+                        "ok": False,
+                        "embedding_ok": False,
+                        "chat_ok": False,
+                        "error": "OPENAI_API_KEY missing",
+                    }
+                else:
+                    st.session_state["ai_runtime_test_result"] = test_openai_runtime(
+                        api_key=effective_key,
+                        answer_model=str(st.session_state.get("ai_runtime_model", "gpt-4o-mini")),
+                        embedding_model=str(
+                            st.session_state.get("ai_runtime_embedding_model", "text-embedding-3-small")
+                        ),
+                    )
+            runtime_test = st.session_state.get("ai_runtime_test_result")
+            if runtime_test:
+                if runtime_test.get("ok"):
+                    test_cols[1].success(
+                        bi(
+                            "اتصال OpenAI ناجح: التضمين والإجابة يعملان.",
+                            "OpenAI connectivity passed: embeddings and answer model both work.",
+                            arabic_default,
+                        )
+                    )
+                else:
+                    failure_bits = [
+                        str(runtime_test.get("error") or ""),
+                        str(runtime_test.get("embedding_error") or ""),
+                        str(runtime_test.get("chat_error") or ""),
+                    ]
+                    failure_message = " | ".join(bit for bit in failure_bits if bit)
+                    test_cols[1].error(
+                        bi(
+                            f"فشل اختبار AI: {failure_message or 'unknown error'}",
+                            f"AI runtime test failed: {failure_message or 'unknown error'}",
+                            arabic_default,
+                        )
+                    )
 
         q_cols = st.columns([4, 1.2, 1.6, 1.1])
         st.session_state["rag_query"] = q_cols[0].text_input(
@@ -2102,6 +2157,14 @@ elif selected_nav == "assistant":
 
             st.markdown(f"#### {bi('الإجابة', 'Answer', arabic_default)}")
             st.write(str(result.get("answer", "")))
+            if result.get("policy_blocked"):
+                st.warning(
+                    bi(
+                        "تم حظر هذا الطلب لأن المساعد لا ينفذ إجراءات تشغيلية أو يكشف بيانات حساسة.",
+                        "This request was blocked because the assistant cannot execute workflow actions or reveal sensitive data.",
+                        arabic_default,
+                    )
+                )
             if result.get("llm_error"):
                 st.caption(
                     bi(
@@ -2145,6 +2208,11 @@ elif selected_nav == "assistant":
                         )
 
     with right_col:
+        policy = capability_guide("ar" if arabic_default else "en")
+        st.markdown(f"### {bi('ما الذي يمكنه فعله', 'What It Can Do', arabic_default)}")
+        st.markdown("\n".join(f"- {item}" for item in policy["can"]))
+        st.markdown(f"### {bi('ما الذي لا يمكنه فعله', 'What It Cannot Do', arabic_default)}")
+        st.markdown("\n".join(f"- {item}" for item in policy["cannot"]))
         st.markdown(f"### {bi('تدفق RAG', 'RAG Flow', arabic_default)}")
         st.markdown(
             "\n".join(

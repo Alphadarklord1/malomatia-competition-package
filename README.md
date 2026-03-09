@@ -63,7 +63,9 @@ Template:
   - add `openai_api_key` to secrets for generated grounded answers
   - optional `openai_model` and `openai_embedding_model`
   - can also paste API key in Assistant page (`AI Runtime Settings`) for session-only testing
+  - use `Test AI` in the Assistant page to verify embeddings + answer model connectivity
   - without key, assistant uses deterministic grounded fallback
+  - strict guardrails block action execution, PII reveal, secret extraction, and out-of-policy answers
 
 ## Search, Filters, and Pagination
 

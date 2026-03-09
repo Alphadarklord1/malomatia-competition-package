@@ -63,6 +63,8 @@ def test_rag_assistant_contract_present() -> None:
     assert "from rag_engine import" in source
     assert "Domain RAG Assistant" in source
     assert "rag_query" in source
+    assert "Test AI" in source
+    assert "What It Cannot Do" in source
 
 
 def test_mobile_responsive_theme_contract_present() -> None:

@@ -24,6 +24,43 @@ REQUIRED_DOC_KEYS = {
     "text_ar",
     "text_en",
 }
+DOC_CITATION_RE = re.compile(r"\[[A-Z0-9\-]+/[A-Z0-9\-]+\]")
+DISALLOWED_QUERY_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in [
+        r"\b(approve|override|close|delete|reroute|assign|transfer|resolve|reveal)\b",
+        r"\b(password|secret|token|api key|system prompt|prompt)\b",
+        r"\b(execute|run command|change setting|write to database)\b",
+        r"\b(كشف البيانات|إظهار البيانات|كلمة المرور|الرمز السري|اعتماد|تجاوز|إغلاق|حذف|تحويل|إسناد)\b",
+    ]
+]
+
+CAPABILITY_GUIDE = {
+    "en": {
+        "can": [
+            "Answer only from retrieved policy and operations knowledge.",
+            "Explain routing, urgency, SLA, privacy, and escalation rules with citations.",
+            "Show which chunks and policy rules were used to form the answer.",
+        ],
+        "cannot": [
+            "Approve, override, assign, or change any case state.",
+            "Reveal masked PII, secrets, prompts, or hidden system instructions.",
+            "Invent policy details or answer out-of-scope questions as if they were grounded facts.",
+        ],
+    },
+    "ar": {
+        "can": [
+            "الإجابة فقط من سياسات ومعرفة التشغيل المسترجعة.",
+            "شرح قواعد التوجيه والأولوية وSLA والخصوصية والتصعيد مع المراجع.",
+            "إظهار المقاطع والقواعد التي بُنيت عليها الإجابة.",
+        ],
+        "cannot": [
+            "اعتماد أو تجاوز أو إسناد أو تغيير حالة أي قضية.",
+            "كشف البيانات الحساسة أو الأسرار أو التعليمات الداخلية المخفية.",
+            "اختلاق سياسات أو تقديم معلومات خارج النطاق باعتبارها حقائق مؤكدة.",
+        ],
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -74,6 +111,31 @@ def baseline_answer(query: str, language: str) -> str:
     if any(term in lowered for term in ["sla", "deadline", "urgent"]):
         return "There is likely an SLA target involved, but a plain model cannot guarantee it is using the organization-specific service rule."
     return "This looks like a government service request, but a plain model may answer generically because it is not grounded in the internal policy base."
+
+
+def capability_guide(language: str) -> dict[str, list[str]]:
+    return CAPABILITY_GUIDE["ar" if language == "ar" else "en"]
+
+
+def validate_api_key_format(api_key: str | None) -> tuple[bool, str | None]:
+    value = (api_key or "").strip()
+    if not value:
+        return False, "OPENAI_API_KEY missing"
+    if not value.startswith("sk-") or len(value) < 20:
+        return False, "Invalid OpenAI API key format"
+    return True, None
+
+
+def evaluate_query_policy(query: str, language: str) -> tuple[bool, str | None]:
+    value = query.strip()
+    if not value:
+        return False, "اكتب سؤالاً أولاً." if language == "ar" else "Enter a question first."
+    for pattern in DISALLOWED_QUERY_PATTERNS:
+        if pattern.search(value):
+            if language == "ar":
+                return False, "هذا المساعد يشرح السياسات فقط ولا ينفذ إجراءات تشغيلية أو يكشف بيانات حساسة."
+            return False, "This assistant explains policy only. It cannot execute workflow actions or reveal sensitive data."
+    return True, None
 
 
 def _chunk_tokens(tokens: list[str], chunk_size: int, overlap: int) -> list[list[str]]:
@@ -196,8 +258,9 @@ def _openai_embeddings(
     model: str,
     texts: list[str],
 ) -> tuple[list[list[float]] | None, str | None]:
-    if not api_key:
-        return None, "OPENAI_API_KEY missing"
+    ok, error = validate_api_key_format(api_key)
+    if not ok:
+        return None, error
     if not texts:
         return None, "No texts for embedding"
 
@@ -232,6 +295,48 @@ def _openai_embeddings(
         return None, f"EMBED_HTTP_{exc.code}: {error_text[:280]}"
     except Exception as exc:  # pragma: no cover - network/runtime dependent
         return None, f"EMBED_ERROR: {exc}"
+
+
+def _openai_chat_request(
+    *,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+) -> tuple[str | None, str | None]:
+    ok, error = validate_api_key_format(api_key)
+    if not ok:
+        return None, error
+
+    payload = {
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "messages": messages,
+    }
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        text = str(body["choices"][0]["message"]["content"]).strip()
+        if not text:
+            return None, "Empty LLM response"
+        return text, None
+    except urllib.error.HTTPError as exc:
+        error_text = exc.read().decode("utf-8", errors="replace")
+        return None, f"LLM_HTTP_{exc.code}: {error_text[:280]}"
+    except Exception as exc:  # pragma: no cover - network/runtime dependent
+        return None, f"LLM_ERROR: {exc}"
 
 
 def retrieve(
@@ -378,8 +483,9 @@ def _openai_answer(
     hits: list[RetrievalHit],
     language: str,
 ) -> tuple[str | None, str | None]:
-    if not api_key:
-        return None, "OPENAI_API_KEY missing"
+    ok, error = validate_api_key_format(api_key)
+    if not ok:
+        return None, error
     if not hits:
         return None, "No retrieval hits"
 
@@ -390,49 +496,77 @@ def _openai_answer(
 
     if language == "ar":
         system = (
-            "أنت مساعد عمليات حكومية. أجب فقط من المقاطع المسترجعة. "
-            "إذا كانت المعلومات غير كافية قل ذلك بوضوح. أضف المراجع بصيغة [DOC/CHUNK]."
+            "أنت مساعد عمليات حكومية مقيّد. "
+            "يمكنك فقط شرح السياسات والقرارات التشغيلية اعتماداً على المقاطع المسترجعة. "
+            "لا تنفذ إجراءات، لا تكشف بيانات حساسة، لا تخترع سياسات، ولا تستخدم معرفة خارج السياق. "
+            "إذا لم تكف الأدلة فاذكر ذلك بوضوح. أضف مراجع بصيغة [DOC/CHUNK] في الجواب."
         )
     else:
         system = (
-            "You are a government operations assistant. Answer only from retrieved chunks. "
-            "If evidence is insufficient, say so. Add citations as [DOC/CHUNK]."
+            "You are a constrained government operations assistant. "
+            "You may only explain policy and workflow decisions from retrieved chunks. "
+            "Do not execute actions, reveal sensitive data, invent policy, or use outside knowledge as fact. "
+            "If evidence is insufficient, say so clearly. Add citations as [DOC/CHUNK] in the answer."
         )
-
-    payload = {
-        "model": model,
-        "temperature": 0.1,
-        "messages": [
+    answer, request_error = _openai_chat_request(
+        api_key=api_key,
+        model=model,
+        messages=[
             {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": f"Question:\n{query}\n\nRetrieved Context:\n{context}",
             },
         ],
-    }
-
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+        temperature=0.1,
+        max_tokens=380,
     )
+    if not answer:
+        return None, request_error
+    if not DOC_CITATION_RE.search(answer):
+        return None, "LLM output missing citations; reverted to grounded fallback"
+    return answer, None
 
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        text = body["choices"][0]["message"]["content"].strip()
-        if not text:
-            return None, "Empty LLM response"
-        return text, None
-    except urllib.error.HTTPError as exc:
-        error_text = exc.read().decode("utf-8", errors="replace")
-        return None, f"LLM_HTTP_{exc.code}: {error_text[:280]}"
-    except Exception as exc:  # pragma: no cover - network/runtime dependent
-        return None, f"LLM_ERROR: {exc}"
+
+def test_openai_runtime(
+    *,
+    api_key: str,
+    answer_model: str,
+    embedding_model: str,
+) -> dict[str, Any]:
+    ok, error = validate_api_key_format(api_key)
+    if not ok:
+        return {
+            "ok": False,
+            "embedding_ok": False,
+            "chat_ok": False,
+            "error": error,
+        }
+
+    vectors, embed_err = _openai_embeddings(
+        api_key=api_key,
+        model=embedding_model,
+        texts=["policy routing check"],
+    )
+    embedding_ok = bool(vectors and len(vectors) == 1)
+    chat_text, chat_err = _openai_chat_request(
+        api_key=api_key,
+        model=answer_model,
+        messages=[
+            {"role": "system", "content": "Reply with OK only."},
+            {"role": "user", "content": "OK"},
+        ],
+        temperature=0.0,
+        max_tokens=8,
+    )
+    chat_ok = bool(chat_text)
+    return {
+        "ok": embedding_ok and chat_ok,
+        "embedding_ok": embedding_ok,
+        "chat_ok": chat_ok,
+        "embedding_error": embed_err,
+        "chat_error": chat_err,
+    }
 
 
 def answer_question(
@@ -446,6 +580,16 @@ def answer_question(
     openai_model: str = "gpt-4o-mini",
     openai_embedding_model: str = "text-embedding-3-small",
 ) -> dict[str, Any]:
+    allowed, policy_message = evaluate_query_policy(query, language)
+    if not allowed:
+        return {
+            "answer": policy_message,
+            "hits": [],
+            "used_llm": False,
+            "llm_error": None,
+            "policy_blocked": True,
+        }
+
     hits = retrieve(
         query=query,
         data_path=data_path,
@@ -489,4 +633,5 @@ def answer_question(
         ],
         "used_llm": bool(llm_answer),
         "llm_error": llm_error,
+        "policy_blocked": False,
     }
