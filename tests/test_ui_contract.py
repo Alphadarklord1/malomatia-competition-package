@@ -96,6 +96,18 @@ def test_real_auth_directory_contract_present() -> None:
     assert "Two-Step Verification" in source
     assert "Save Two-Step Verification" in source
     assert "Generate new MFA secret" in source
+    assert "Create account" in source
+
+
+def test_beta_support_contract_present() -> None:
+    source = _source()
+    assert "Judge Quick Start" in source
+    assert "Report an Issue or Feedback" in source
+    assert "Submit Feedback" in source
+    assert "Beta Readiness" in source
+    assert "Beta Operations" in source
+    assert "Export Feedback Log" in source
+    assert "feedback.log.jsonl" in source
 
 
 def test_mobile_responsive_theme_contract_present() -> None:

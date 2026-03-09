@@ -29,6 +29,7 @@ from rag_engine import (
     validate_api_key_format,
 )
 from storage import (
+    CURRENT_SCHEMA_VERSION,
     ack_notification,
     approve_case,
     assign_case,
@@ -80,6 +81,7 @@ KNOWLEDGE_MANIFEST_PATH = BASE_DIR / "knowledge_manifest.json"
 RAG_EVAL_PATH = BASE_DIR / "rag_eval_set.json"
 AUDIT_LOG_PATH = BASE_DIR / "audit.log.jsonl"
 AUDIT_ARCHIVE_PATH = BASE_DIR / "audit.archive.jsonl"
+FEEDBACK_LOG_PATH = BASE_DIR / "feedback.log.jsonl"
 AUTH_SCHEMA_VERSION = 7
 LOGIN_LOCKOUT_AFTER = 5
 LOGIN_LOCKOUT_MINUTES = 15
@@ -527,6 +529,66 @@ def validate_audit_chain() -> tuple[bool, str, int]:
         count += 1
 
     return True, "Audit chain valid", count
+
+
+def read_feedback_entries() -> list[dict[str, Any]]:
+    if not FEEDBACK_LOG_PATH.exists():
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in FEEDBACK_LOG_PATH.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return entries
+
+
+def append_feedback_entry(category: str, summary: str, details: str, rating: int) -> None:
+    entry = {
+        "feedback_id": str(uuid.uuid4()),
+        "timestamp_utc": to_utc_iso(utc_now()),
+        "user_id": st.session_state.get("auth_user_id") or "anonymous",
+        "role": st.session_state.get("auth_role") or "unauthenticated",
+        "category": category,
+        "summary": summary.strip(),
+        "details": details.strip(),
+        "rating": int(rating),
+    }
+    with FEEDBACK_LOG_PATH.open("a", encoding="utf-8") as file_obj:
+        file_obj.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def beta_readiness_snapshot(conn_obj: Any) -> dict[str, Any]:
+    auth_status = auth_status_snapshot(conn_obj)
+    chain_ok, chain_message, chain_count = validate_audit_chain()
+    feedback_entries = read_feedback_entries()
+    schema_row = conn_obj.execute("SELECT version FROM schema_meta LIMIT 1").fetchone()
+    schema_version = int(schema_row[0]) if schema_row else 0
+    doc_count = 0
+    chunk_count = 0
+    try:
+        knowledge_manifest = build_knowledge_manifest(DOMAIN_KB_PATH, KNOWLEDGE_MANIFEST_PATH)
+        doc_count = len(knowledge_manifest.get("documents", []))
+        chunk_count = int(knowledge_manifest.get("chunk_count", 0))
+    except Exception:
+        pass
+    return {
+        "schema_version": schema_version,
+        "schema_expected": CURRENT_SCHEMA_VERSION,
+        "audit_chain_ok": chain_ok,
+        "audit_chain_message": chain_message,
+        "audit_event_count": chain_count,
+        "local_user_count": auth_status["local_user_count"],
+        "local_mfa_enabled": auth_status["local_mfa_enabled"],
+        "oidc_enabled": auth_status["oidc_enabled"],
+        "providers": auth_status["providers"],
+        "feedback_count": len(feedback_entries),
+        "case_count": len(list_cases(conn_obj)),
+        "knowledge_documents": doc_count,
+        "knowledge_chunks": chunk_count,
+    }
 
 
 def clear_auth_state() -> None:
@@ -2805,6 +2867,17 @@ elif selected_nav == "help":
                 arabic_default,
             )
         )
+        st.markdown(f"#### {bi('بدء سريع للحكام', 'Judge Quick Start', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"1. {bi('سجل الدخول كمشرف لمشاهدة الإدارة والحوكمة.', 'Sign in as supervisor to view administration and governance.', arabic_default)}",
+                    f"2. {bi('افتح الطلبات الواردة واختر طلباً عربياً عاجلاً.', 'Open Incoming Requests and select an urgent Arabic request.', arabic_default)}",
+                    f"3. {bi('راجع أثر القرار ثم افتح شاشة المراجعة أو الإشعارات.', 'Review the decision trace, then open Review or Notifications.', arabic_default)}",
+                    f"4. {bi('افتح المساعد المعرفي واسأل عن SLA أو سياسة التوجيه.', 'Open the Knowledge Assistant and ask about SLA or routing policy.', arabic_default)}",
+                ]
+            )
+        )
         st.markdown(f"#### {bi('مصفوفة الأدوار', 'Role Capability Matrix', arabic_default)}")
         role_rows = [
             {"role": "operator", "caps": "view/select/approve/assign/transition"},
@@ -2846,8 +2919,59 @@ elif selected_nav == "help":
         st.markdown(f"#### {bi('استكشاف الأخطاء', 'Troubleshooting Shortcuts', arabic_default)}")
         st.code("./run_validation.sh", language="bash")
         st.code("./run_prototype.sh", language="bash")
+        st.markdown(f"#### {bi('إبلاغ عن مشكلة أو ملاحظة', 'Report an Issue or Feedback', arabic_default)}")
+        with st.form("beta_feedback_form"):
+            feedback_category = st.selectbox(
+                bi("الفئة", "Category", arabic_default),
+                options=["bug", "ux", "ai", "security", "other"],
+                format_func=lambda v: {
+                    "bug": bi("خطأ", "Bug", arabic_default),
+                    "ux": bi("تجربة الاستخدام", "UX", arabic_default),
+                    "ai": bi("الذكاء الاصطناعي", "AI", arabic_default),
+                    "security": bi("الأمن", "Security", arabic_default),
+                    "other": bi("أخرى", "Other", arabic_default),
+                }[v],
+            )
+            feedback_summary = st.text_input(bi("ملخص قصير", "Short summary", arabic_default))
+            feedback_details = st.text_area(bi("التفاصيل", "Details", arabic_default), height=120)
+            feedback_rating = st.slider(
+                bi("تقييم الجاهزية", "Beta readiness score", arabic_default),
+                min_value=1,
+                max_value=5,
+                value=4,
+            )
+            feedback_submit = st.form_submit_button(ui("إرسال الملاحظة", "Submit Feedback", arabic_default), type="primary")
+        if feedback_submit:
+            if not feedback_summary.strip():
+                st.error(bi("الملخص مطلوب.", "Summary is required.", arabic_default))
+            elif not feedback_details.strip():
+                st.error(bi("التفاصيل مطلوبة.", "Details are required.", arabic_default))
+            else:
+                append_feedback_entry(feedback_category, feedback_summary, feedback_details, int(feedback_rating))
+                append_audit_event(
+                    action="feedback_submit",
+                    result="success",
+                    details={"category": feedback_category, "rating": int(feedback_rating), "summary": feedback_summary[:120]},
+                )
+                st.success(bi("تم حفظ الملاحظة في سجل الدعم المحلي.", "Feedback saved to the local support log.", arabic_default))
+                st.rerun()
 
     with right_col:
+        beta_snapshot = beta_readiness_snapshot(conn)
+        st.markdown(f"### {bi('جاهزية النسخة التجريبية', 'Beta Readiness', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- {bi('إصدار المخطط', 'Schema version', arabic_default)}: {beta_snapshot['schema_version']} / {beta_snapshot['schema_expected']}",
+                    f"- {bi('سلامة التدقيق', 'Audit chain', arabic_default)}: {'OK' if beta_snapshot['audit_chain_ok'] else 'FAILED'}",
+                    f"- {bi('الدليل المحلي', 'Local users', arabic_default)}: {beta_snapshot['local_user_count']}",
+                    f"- {bi('مستخدمو MFA المحلي', 'Local MFA users', arabic_default)}: {beta_snapshot['local_mfa_enabled']}",
+                    f"- {bi('OIDC', 'OIDC', arabic_default)}: {bi('مهيأ', 'Configured', arabic_default) if beta_snapshot['oidc_enabled'] else bi('غير مهيأ', 'Not configured', arabic_default)}",
+                    f"- {bi('قاعدة المعرفة', 'Knowledge base', arabic_default)}: {beta_snapshot['knowledge_documents']} {bi('وثيقة', 'docs', arabic_default)} / {beta_snapshot['knowledge_chunks']} {bi('مقطع', 'chunks', arabic_default)}",
+                    f"- {bi('ملاحظات البيتا', 'Beta feedback entries', arabic_default)}: {beta_snapshot['feedback_count']}",
+                ]
+            )
+        )
         st.markdown(f"### {bi('لماذا هذا مهم', 'Why This Matters', arabic_default)}")
         st.markdown(
             "\n".join(
@@ -3347,6 +3471,7 @@ elif selected_nav == "settings":
 
     with right_col:
         auth_status = auth_status_snapshot(conn)
+        beta_snapshot = beta_readiness_snapshot(conn)
         st.markdown(f"### {bi('حالة المصادقة', 'Auth Status', arabic_default)}")
         st.markdown(
             "\n".join(
@@ -3355,6 +3480,17 @@ elif selected_nav == "settings":
                     f"- {bi('OIDC', 'OIDC', arabic_default)}: {bi('مفعل', 'Configured', arabic_default) if auth_status['oidc_enabled'] else bi('غير مفعل', 'Not configured', arabic_default)}",
                     f"- {bi('الموفرون', 'Providers', arabic_default)}: {', '.join(auth_status['providers']) if auth_status['providers'] else '-'}",
                     f"- {bi('مستخدمو TOTP المحلي', 'Local TOTP users', arabic_default)}: {auth_status['local_mfa_enabled']} / {auth_status['local_user_count']}",
+                ]
+            )
+        )
+        st.markdown(f"### {bi('عمليات النسخة التجريبية', 'Beta Operations', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"- {bi('نسخة المخطط', 'Schema version', arabic_default)}: {beta_snapshot['schema_version']} / {beta_snapshot['schema_expected']}",
+                    f"- {bi('سجل الدعم', 'Support log entries', arabic_default)}: {beta_snapshot['feedback_count']}",
+                    f"- {bi('سلامة التدقيق', 'Audit chain integrity', arabic_default)}: {'OK' if beta_snapshot['audit_chain_ok'] else 'FAILED'}",
+                    f"- {bi('عدد الحالات', 'Cases loaded', arabic_default)}: {beta_snapshot['case_count']}",
                 ]
             )
         )
@@ -3409,6 +3545,16 @@ elif selected_nav == "settings":
                 label=ui("تصدير سجل التدقيق", "Export Audit Log", arabic_default),
                 data=content,
                 file_name="audit.log.jsonl",
+                mime="application/jsonl",
+                width="stretch",
+            )
+            feedback_content = "\n".join(
+                json.dumps(entry, ensure_ascii=False) for entry in read_feedback_entries()
+            )
+            st.download_button(
+                label=ui("تصدير سجل الملاحظات", "Export Feedback Log", arabic_default),
+                data=feedback_content,
+                file_name="feedback.log.jsonl",
                 mime="application/jsonl",
                 width="stretch",
             )
