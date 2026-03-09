@@ -9,6 +9,7 @@ Internal pilot prototype for Qatar public-service AI triage operations with:
 - workflow lifecycle + SLA monitoring
 - manifest-backed RAG knowledge management + benchmark evaluation
 - Arabic-first single-language mode toggle (`ar`/`en`)
+- final release controls: public sign-up policy, approval-based self-sign-up, support inbox, release status, and backup/export actions
 
 ## Deterministic Startup
 
@@ -44,6 +45,8 @@ Optional auth upgrades:
 - Google / Microsoft SSO: configure `[auth]`, `[auth.google]`, `[auth.microsoft]`
 - OIDC role mapping: configure `[oidc_roles]` lists for supervisors and auditors
 - Supervisors can create local users, reset passwords, set roles/status, and manage local TOTP from the Settings page
+- Final release default: login-page self-sign-up is disabled unless a supervisor enables it in Settings
+- If self-sign-up is enabled, new accounts require supervisor approval by default before first login
 
 For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 
@@ -56,7 +59,7 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
 - `Knowledge Assistant`: domain RAG assistant (chunking, vector search, reranking, cited answers)
 - `Notifications`: SLA/quality alerts with acknowledge flow
 - `Help`: role matrix, workflow quick guide, privacy/audit notes
-- `Settings`: visual controls + security/privacy controls + audit export
+- `Settings`: visual controls + security/privacy controls + auth status + support inbox + export/backup actions
 - Mobile support: responsive stacking for cards, controls, and panels on narrow screens
 
 ## Session 3 RAG Deliverable
@@ -78,6 +81,7 @@ For Streamlit OIDC login, install/runtime-pin `Authlib==1.6.0`.
   - add `openai_api_key` to secrets for generated grounded answers
   - optional `openai_model` and `openai_embedding_model`
   - can also paste API key in Assistant page (`AI Runtime Settings`) for session-only testing
+  - runtime UI keys are session-only and are not persisted as permanent app settings
   - use `Test AI` in the Assistant page to verify embeddings + answer model connectivity
   - without key, assistant uses deterministic grounded fallback
   - strict guardrails block action execution, PII reveal, secret extraction, and out-of-policy answers
@@ -128,6 +132,7 @@ Coverage includes:
 - saved views + notifications storage behavior
 - RAG retrieval/indexing behavior
 - UI contract checks for single-language mode, navigation, pagination, and guarded mutations
+- final release controls for approval-based sign-up, support inbox, release status, and export actions
 
 ## Migration Verification
 
@@ -165,8 +170,21 @@ ps aux | rg streamlit
 - Storage: local SQLite (`triage.db`)
 - Audit log: `audit.log.jsonl` (append-only, hash-chained)
 - Audit archive: `audit.archive.jsonl`
+- Support log: `feedback.log.jsonl`
 - Mock seed source: `example_data.json`
 - Scope: local pilot only, no external backend
+
+## Restore Guidance
+
+- Restore database: replace `triage.db` with a known-good backup while the app is stopped
+- Restore audit log: replace `audit.log.jsonl` and keep `audit.archive.jsonl` alongside it if you are preserving old events
+- Restore support log: replace `feedback.log.jsonl`
+- Official local backup path:
+  - `Export Audit Log`
+  - `Export Feedback Log`
+  - `Export Cases`
+  - `Export Workflow Events`
+  - `Download Database Backup`
 
 ## Pilot Readiness Checklist
 
@@ -180,6 +198,25 @@ ps aux | rg streamlit
 8. Local MFA and optional Google/Microsoft SSO are configured correctly for the target environment.
 9. RAG manifest and evaluation set are visible and passing.
 10. `./run_validation.sh` passes.
+
+## Final Release Notes
+
+- Version: `1.0.0`
+- Release stage: `final`
+- Supported login methods:
+  - local username/password
+  - local username/password + TOTP
+  - Google OIDC when configured
+  - Microsoft OIDC when configured
+- Required secrets for hardened deployment:
+  - local user password hashes
+  - `audit_signing_salt`
+  - `cookie_secret`
+  - OIDC client/secret pairs if using Google/Microsoft
+  - optional OpenAI key/model settings
+- RAG behavior:
+  - without OpenAI: deterministic grounded retrieval fallback
+  - with OpenAI: grounded answer generation using configured key or session-only runtime key
 
 ## Shareable Deployment
 

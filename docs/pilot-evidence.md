@@ -14,8 +14,8 @@ Observed output:
 Running smoke validation...
 PASS: smoke validation checks completed
 Running pytest suite...
-...............................                                          [100%]
-31 passed in 0.14s
+................................                                         [100%]
+32 passed in 0.13s
 ```
 
 ## Acceptance Checklist (Pass/Fail)
@@ -35,6 +35,7 @@ Running pytest suite...
 | Account management and managed MFA active | PASS | `storage.py` user-admin functions + Settings UI + storage tests |
 | Session 3 RAG retrieval pipeline active | PASS | `rag_engine.py` + `tests/test_rag_engine.py` + Assistant nav |
 | Knowledge manifest and RAG benchmark evaluation active | PASS | `knowledge_manifest.json` + `rag_eval_set.json` + Assistant eval panel + validation smoke |
+| Final release controls active | PASS | public sign-up policy + approval mode + release status + support inbox + export/backup controls in `/Users/armankhan/Documents/malomatia-competition-package/gov_triage_dashboard.py` |
 | Streamlit cloud packaging ready | PASS | `/Users/armankhan/Documents/malomatia-competition-package/requirements.txt` + `/Users/armankhan/Documents/malomatia-competition-package/DEPLOYMENT.md` + CI smoke workflow |
 
 ## Screenshot Contract
@@ -86,5 +87,8 @@ Required filenames:
 - Production controls (enterprise SSO/KMS/SIEM) remain out of this milestone.
 - Auth state now includes provider-aware local/OIDC users plus managed local TOTP.
 - RAG now exposes corpus manifest and an 8-question benchmark set with pass-rate summary.
+- Final release defaults now disable public self-sign-up unless explicitly enabled by a supervisor.
+- If public self-sign-up is enabled, approval mode can keep new accounts inactive until supervisor activation.
+- Support feedback is now reviewable in-app and exportable via `feedback.log.jsonl`.
 - Screenshot set is now present in the repo and was captured from a clean local authenticated supervisor session.
 - The currently deployed Streamlit URL still redirects through Streamlit platform auth; public judge access still requires the app sharing setting to be switched to anyone with the link.

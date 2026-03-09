@@ -66,6 +66,9 @@ supervisors = ["supervisor@example.com"]
 auditors = ["auditor@example.com"]
 
 audit_signing_salt = "replace-with-random-long-string"
+openai_api_key = "optional-openai-key"
+openai_model = "gpt-4o-mini"
+openai_embedding_model = "text-embedding-3-small"
 ```
 
 Never commit real secrets.
@@ -94,8 +97,16 @@ Never commit real secrets.
 12. Notifications show and acknowledge works for supervisor/auditor.
 13. Role restrictions are enforced (operator/auditor cannot run unauthorized writes).
 14. Audit export works for supervisor/auditor.
-15. Settings page shows Auth Status, My Account, and Account Administration sections.
-16. Knowledge Assistant shows knowledge sources and RAG evaluation summary.
+15. Settings page shows Auth Status, My Account, Final Release Support Inbox, and Account Administration sections.
+16. Settings page shows System Status with OIDC/OpenAI configuration state.
+17. Knowledge Assistant shows knowledge sources and RAG evaluation summary.
+18. If login-page self-sign-up is enabled, new accounts are inactive by default until supervisor approval when approval mode is on.
+19. Export/download actions work:
+   - audit log
+   - feedback log
+   - cases
+   - workflow events
+   - database backup
 
 ## 5. Local vs Cloud Secrets Handling
 
@@ -107,3 +118,10 @@ Never commit real secrets.
 
 - Local start: `./run_prototype.sh`
 - Local validation evidence: `./run_validation.sh`
+
+## 7. Restore / Recovery Guidance
+
+- Stop the app before replacing backup files.
+- Restore `triage.db` from the downloaded database backup if you need full state recovery.
+- Restore `audit.log.jsonl` and `feedback.log.jsonl` from exported backups if you need log recovery.
+- After restore, restart the app and rerun `./run_validation.sh`.

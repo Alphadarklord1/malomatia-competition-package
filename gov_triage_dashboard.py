@@ -84,7 +84,7 @@ AUDIT_ARCHIVE_PATH = BASE_DIR / "audit.archive.jsonl"
 FEEDBACK_LOG_PATH = BASE_DIR / "feedback.log.jsonl"
 AUTH_SCHEMA_VERSION = 7
 APP_VERSION = "1.0.0"
-RELEASE_STAGE = "final_candidate"
+RELEASE_STAGE = "final"
 LOGIN_LOCKOUT_AFTER = 5
 LOGIN_LOCKOUT_MINUTES = 15
 
@@ -150,7 +150,8 @@ def ensure_session_defaults() -> None:
         "security_session_max_hours": 8,
         "security_audit_retention_days": 90,
         "security_privacy_masking_enabled": True,
-        "security_public_signup_enabled": True,
+        "security_public_signup_enabled": False,
+        "security_signup_requires_approval": True,
         "revealed_case_ids": set(),
         "auth_user_id": None,
         "auth_display_name": None,
@@ -596,6 +597,20 @@ def beta_readiness_snapshot(conn_obj: Any) -> dict[str, Any]:
     }
 
 
+def system_status_snapshot(conn_obj: Any) -> dict[str, Any]:
+    base = beta_readiness_snapshot(conn_obj)
+    openai_secret_configured = bool(str(st.secrets.get("openai_api_key", "")).strip())
+    openai_runtime_active = bool(str(st.session_state.get("ai_runtime_api_key", "")).strip())
+    return {
+        **base,
+        "public_signup_enabled": bool(st.session_state.get("security_public_signup_enabled", False)),
+        "signup_requires_approval": bool(st.session_state.get("security_signup_requires_approval", True)),
+        "openai_secret_configured": openai_secret_configured,
+        "openai_runtime_active": openai_runtime_active,
+        "openai_available": openai_secret_configured or openai_runtime_active,
+    }
+
+
 def release_status_label(snapshot: dict[str, Any]) -> str:
     if (
         snapshot["schema_version"] == snapshot["schema_expected"]
@@ -695,8 +710,12 @@ def login_screen(conn_obj: Any) -> None:
         st.caption("Google and Microsoft sign-in will appear here when OIDC is configured for this deployment.")
         st.markdown("---")
 
-    if not bool(st.session_state.get("security_public_signup_enabled", True)):
+    if not bool(st.session_state.get("security_public_signup_enabled", False)):
         st.caption("New account creation is currently disabled by the administrator.")
+    elif bool(st.session_state.get("security_signup_requires_approval", True)):
+        st.caption("New local accounts require supervisor approval before first login.")
+    else:
+        st.caption("New local accounts are enabled and become active immediately after sign-up.")
 
     pending_mfa_user_id = str(st.session_state.get("pending_mfa_user_id") or "").strip()
 
@@ -830,12 +849,14 @@ def login_screen(conn_obj: Any) -> None:
 
         finalize_local_login(conn_obj, user, username.strip())
 
-    if not bool(st.session_state.get("security_public_signup_enabled", True)):
+    if not bool(st.session_state.get("security_public_signup_enabled", False)):
         return
 
     st.markdown("---")
     with st.expander("Create Account"):
         st.caption("Create a local operator account. Google and Microsoft sign-in depend on external provider setup.")
+        if bool(st.session_state.get("security_signup_requires_approval", True)):
+            st.caption("New sign-ups are created in inactive status and must be approved by a supervisor in Settings.")
         with st.form("create_account_form"):
             signup_user_id = st.text_input("New username")
             signup_display_name = st.text_input("Display name")
@@ -871,7 +892,7 @@ def login_screen(conn_obj: Any) -> None:
                     display_name=display_name,
                     role="operator",
                     password_hash=hash_password_pbkdf2(password_value),
-                    status="active",
+                    status="inactive" if bool(st.session_state.get("security_signup_requires_approval", True)) else "active",
                     mfa_required=signup_enable_mfa,
                     totp_secret=totp_secret or None,
                 )
@@ -883,6 +904,7 @@ def login_screen(conn_obj: Any) -> None:
                     details={
                         "display_name": display_name,
                         "mfa_required": bool(signup_enable_mfa),
+                        "status": "inactive" if bool(st.session_state.get("security_signup_requires_approval", True)) else "active",
                         "reason": msg_new if not ok_new else "local_account_created",
                     },
                 )
@@ -890,8 +912,13 @@ def login_screen(conn_obj: Any) -> None:
                     render_mutation_error(msg_new, arabic_default=False)
                 else:
                     if created_user and int(created_user.get("mfa_required", 0)) == 1:
-                        st.success("Account created. Sign in with your username and password, then enter the verification code from your authenticator app.")
+                        if str(created_user.get("status", "active")) != "active":
+                            st.success("Account created and submitted for approval. Keep this authenticator secret; you will need it after a supervisor activates the account.")
+                        else:
+                            st.success("Account created. Sign in with your username and password, then enter the verification code from your authenticator app.")
                         st.code(str(created_user.get("totp_secret") or ""), language=None)
+                    elif created_user and str(created_user.get("status", "active")) != "active":
+                        st.success("Account created and submitted for approval. A supervisor must activate it before you can sign in.")
                     else:
                         st.success("Account created. You can sign in now.")
 
@@ -2541,6 +2568,13 @@ elif selected_nav == "assistant":
                         arabic_default,
                     )
                 )
+            st.caption(
+                bi(
+                    "أي مفتاح API يتم إدخاله هنا يبقى ضمن الجلسة الحالية فقط ولا يحفظ كإعداد دائم داخل التطبيق.",
+                    "Any API key entered here is used for the current session only and is not stored as a permanent in-app setting.",
+                    arabic_default,
+                )
+            )
             effective_key = str(effective_key).strip()
             key_ok, key_error = validate_api_key_format(effective_key) if effective_key else (False, "OPENAI_API_KEY missing")
             if effective_key and not key_ok:
@@ -3103,6 +3137,11 @@ elif selected_nav == "settings":
                 value=bool(st.session_state["security_public_signup_enabled"]),
                 disabled=not can_write_settings,
             )
+            signup_requires_approval = c2.checkbox(
+                bi("تتطلب الحسابات الجديدة موافقة مشرف", "Require supervisor approval for new sign-ups", arabic_default),
+                value=bool(st.session_state["security_signup_requires_approval"]),
+                disabled=not can_write_settings or not public_signup_enabled,
+            )
             save_clicked = st.form_submit_button(
                 ui("حفظ الإعدادات", "Save Settings", arabic_default),
                 type="primary",
@@ -3120,6 +3159,7 @@ elif selected_nav == "settings":
                 st.session_state["security_audit_retention_days"] = int(audit_retention_days)
                 st.session_state["security_privacy_masking_enabled"] = bool(privacy_masking_enabled)
                 st.session_state["security_public_signup_enabled"] = bool(public_signup_enabled)
+                st.session_state["security_signup_requires_approval"] = bool(signup_requires_approval)
                 append_audit_event(
                     action="settings_save",
                     result="success",
@@ -3133,6 +3173,7 @@ elif selected_nav == "settings":
                         "security_audit_retention_days": int(audit_retention_days),
                         "security_privacy_masking_enabled": bool(privacy_masking_enabled),
                         "security_public_signup_enabled": bool(public_signup_enabled),
+                        "security_signup_requires_approval": bool(signup_requires_approval),
                     },
                 )
                 st.toast(bi("تم حفظ الإعدادات", "Settings saved", arabic_default))
@@ -3148,7 +3189,8 @@ elif selected_nav == "settings":
                 st.session_state["security_session_max_hours"] = 8
                 st.session_state["security_audit_retention_days"] = 90
                 st.session_state["security_privacy_masking_enabled"] = True
-                st.session_state["security_public_signup_enabled"] = True
+                st.session_state["security_public_signup_enabled"] = False
+                st.session_state["security_signup_requires_approval"] = True
                 st.session_state["revealed_case_ids"] = set()
                 append_audit_event(action="settings_reset", result="success", details={"reason": "user_requested"})
                 st.rerun()
@@ -3299,7 +3341,47 @@ elif selected_nav == "settings":
                 )
 
         if can_write_settings:
+            feedback_entries = read_feedback_entries()
+            st.markdown(f"### {bi('صندوق دعم النسخة النهائية', 'Final Release Support Inbox', arabic_default)}")
+            if feedback_entries:
+                recent_feedback = sorted(
+                    feedback_entries,
+                    key=lambda item: str(item.get("timestamp_utc", "")),
+                    reverse=True,
+                )[:25]
+                st.dataframe(
+                    [
+                        {
+                            bi("الوقت", "Timestamp", arabic_default): row.get("timestamp_utc", "-"),
+                            bi("المستخدم", "User", arabic_default): row.get("user_id", "-"),
+                            bi("الدور", "Role", arabic_default): row.get("role", "-"),
+                            bi("الفئة", "Category", arabic_default): row.get("category", "-"),
+                            bi("التقييم", "Rating", arabic_default): row.get("rating", "-"),
+                            bi("الملخص", "Summary", arabic_default): row.get("summary", "-"),
+                        }
+                        for row in recent_feedback
+                    ],
+                    width="stretch",
+                    hide_index=True,
+                )
+            else:
+                st.caption(
+                    bi(
+                        "لا توجد ملاحظات دعم مسجلة بعد.",
+                        "No support feedback has been submitted yet.",
+                        arabic_default,
+                    )
+                )
+
+        if can_write_settings:
             st.markdown(f"### {bi('إدارة الحسابات', 'Account Administration', arabic_default)}")
+            st.caption(
+                bi(
+                    "الوضع النهائي: إنشاء الحسابات من صفحة الدخول معطل افتراضياً. إذا فُعّل، يوصى بالإبقاء على موافقة المشرف للحسابات الجديدة.",
+                    "Final release policy: login-page account creation is disabled by default. If enabled, keep supervisor approval on for new accounts.",
+                    arabic_default,
+                )
+            )
             with st.expander(bi("إنشاء مستخدم محلي", "Create Local User", arabic_default), expanded=False):
                 with st.form("create_local_user_form"):
                     new_user_id = st.text_input(bi("معرف المستخدم", "User ID", arabic_default)).strip().lower()
@@ -3513,7 +3595,7 @@ elif selected_nav == "settings":
 
     with right_col:
         auth_status = auth_status_snapshot(conn)
-        beta_snapshot = beta_readiness_snapshot(conn)
+        status_snapshot = system_status_snapshot(conn)
         st.markdown(f"### {bi('حالة المصادقة', 'Auth Status', arabic_default)}")
         st.markdown(
             "\n".join(
@@ -3525,14 +3607,19 @@ elif selected_nav == "settings":
                 ]
             )
         )
-        st.markdown(f"### {bi('عمليات النسخة التجريبية', 'Beta Operations', arabic_default)}")
+        st.markdown(f"### {bi('حالة النظام', 'System Status', arabic_default)}")
         st.markdown(
             "\n".join(
                 [
-                    f"- {bi('نسخة المخطط', 'Schema version', arabic_default)}: {beta_snapshot['schema_version']} / {beta_snapshot['schema_expected']}",
-                    f"- {bi('سجل الدعم', 'Support log entries', arabic_default)}: {beta_snapshot['feedback_count']}",
-                    f"- {bi('سلامة التدقيق', 'Audit chain integrity', arabic_default)}: {'OK' if beta_snapshot['audit_chain_ok'] else 'FAILED'}",
-                    f"- {bi('عدد الحالات', 'Cases loaded', arabic_default)}: {beta_snapshot['case_count']}",
+                    f"- {bi('الإصدار', 'App version', arabic_default)}: {status_snapshot['app_version']}",
+                    f"- {bi('المرحلة', 'Release stage', arabic_default)}: {status_snapshot['release_stage']}",
+                    f"- {bi('نسخة المخطط', 'Schema version', arabic_default)}: {status_snapshot['schema_version']} / {status_snapshot['schema_expected']}",
+                    f"- {bi('سلامة التدقيق', 'Audit chain integrity', arabic_default)}: {'OK' if status_snapshot['audit_chain_ok'] else 'FAILED'}",
+                    f"- {bi('سجل الدعم', 'Support log entries', arabic_default)}: {status_snapshot['feedback_count']}",
+                    f"- {bi('إنشاء الحسابات العامة', 'Public sign-up', arabic_default)}: {bi('مفعل', 'Enabled', arabic_default) if status_snapshot['public_signup_enabled'] else bi('معطل', 'Disabled', arabic_default)}",
+                    f"- {bi('موافقة المشرف', 'Supervisor approval', arabic_default)}: {bi('مطلوبة', 'Required', arabic_default) if status_snapshot['signup_requires_approval'] else bi('غير مطلوبة', 'Not required', arabic_default)}",
+                    f"- {bi('OpenAI', 'OpenAI', arabic_default)}: {bi('مهيأ', 'Configured', arabic_default) if status_snapshot['openai_available'] else bi('غير مهيأ', 'Not configured', arabic_default)}",
+                    f"- {bi('OIDC', 'OIDC', arabic_default)}: {bi('مهيأ', 'Configured', arabic_default) if status_snapshot['oidc_enabled'] else bi('غير مهيأ', 'Not configured', arabic_default)}",
                 ]
             )
         )
