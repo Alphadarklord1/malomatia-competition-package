@@ -49,6 +49,33 @@ def tokenize(text: str) -> list[str]:
     return [tok.lower() for tok in TOKEN_RE.findall(text or "")]
 
 
+def baseline_answer(query: str, language: str) -> str:
+    lowered = query.strip().lower()
+    if not lowered:
+        return (
+            "اكتب سؤالاً أولاً."
+            if language == "ar"
+            else "Enter a question first."
+        )
+
+    if language == "ar":
+        if any(term in lowered for term in ["إقامة", "تنتهي", "تجديد"]):
+            return "قد تكون هذه معاملة هجرة أو تجديد إقامة، لكن بدون الرجوع إلى سياسة المؤسسة لا يمكن تأكيد الأولوية أو قاعدة التوجيه."
+        if any(term in lowered for term in ["رخصة", "تجارية", "ترخيص"]):
+            return "يبدو أنها معاملة ترخيص، لكن النموذج العام لا يحدد القاعدة التشغيلية أو مستوى الأولوية المؤسسي."
+        if any(term in lowered for term in ["sla", "مهلة", "عاجل"]):
+            return "عادة توجد مهلات مختلفة حسب نوع الحالة، لكن النموذج العام لا يضمن أنه يستخدم اتفاقية مستوى الخدمة الخاصة بالمؤسسة."
+        return "هذا يبدو طلب خدمات حكومية، لكن الإجابة العامة قد تكون غير دقيقة لأنها غير مربوطة بسياسات التشغيل الداخلية."
+
+    if any(term in lowered for term in ["residency", "renewal", "expires"]):
+        return "This looks like an immigration or renewal issue, but a plain model cannot reliably confirm routing or urgency without the organization policy."
+    if any(term in lowered for term in ["license", "licensing", "commercial"]):
+        return "This appears to be a licensing matter, but a plain model cannot reliably identify the internal rule or operational priority."
+    if any(term in lowered for term in ["sla", "deadline", "urgent"]):
+        return "There is likely an SLA target involved, but a plain model cannot guarantee it is using the organization-specific service rule."
+    return "This looks like a government service request, but a plain model may answer generically because it is not grounded in the internal policy base."
+
+
 def _chunk_tokens(tokens: list[str], chunk_size: int, overlap: int) -> list[list[str]]:
     if chunk_size <= 0:
         chunk_size = 85

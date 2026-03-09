@@ -57,6 +57,7 @@ Template:
   - top-k retrieval by cosine similarity
   - rule-aware reranking (keyword/policy/department boosts)
   - grounded response with DOC/CHUNK citations
+  - in-app before/after comparison (`Without Retrieval` vs `With RAG`)
 - Optional LLM synthesis:
   - add `openai_api_key` to secrets for generated grounded answers
   - optional `openai_model` and `openai_embedding_model`

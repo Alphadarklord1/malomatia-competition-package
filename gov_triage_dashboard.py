@@ -15,7 +15,7 @@ from typing import Any
 import streamlit as st
 
 from kpi import compute_operational_kpis
-from rag_engine import RagConfigError, answer_question, build_index
+from rag_engine import RagConfigError, answer_question, baseline_answer, build_index
 from storage import (
     ack_notification,
     approve_case,
@@ -1926,6 +1926,32 @@ elif selected_nav == "assistant":
             )
             st.stop()
 
+        sample_queries = [
+            (
+                "sample_rag_1",
+                "اقامتي تنتهي غداً وأحتاج تجديداً عاجلاً",
+                "My residency expires tomorrow and I need urgent renewal",
+            ),
+            (
+                "sample_rag_2",
+                "ما هي مهلة SLA للحالات العاجلة ومتى تعتبر متجاوزة؟",
+                "What is the SLA for urgent cases and when do they become breached?",
+            ),
+            (
+                "sample_rag_3",
+                "طلب رخصة تجارية جديدة في المنطقة الصناعية هذا الأسبوع",
+                "Request for a new commercial shop license in the industrial area this week",
+            ),
+        ]
+        st.markdown(f"#### {bi('استعلامات سريعة', 'Quick Queries', arabic_default)}")
+        sample_cols = st.columns(len(sample_queries))
+        for idx, (sample_id, query_ar, query_en) in enumerate(sample_queries):
+            sample_label = query_ar if arabic_default else query_en
+            if sample_cols[idx].button(sample_label, key=sample_id):
+                st.session_state["rag_query"] = sample_label
+                st.session_state["rag_last_result"] = None
+                st.rerun()
+
         dept_options = ["AUTO", "all", "Immigration", "Municipal", "Licensing", "Human Review", "Operations"]
         dept_labels = {
             "AUTO": bi("تلقائي من الحالة المحددة", "Auto from selected case", arabic_default),
@@ -2066,6 +2092,14 @@ elif selected_nav == "assistant":
 
         result = st.session_state.get("rag_last_result")
         if result:
+            comparison_cols = st.columns(2)
+            with comparison_cols[0]:
+                st.markdown(f"#### {bi('بدون استرجاع', 'Without Retrieval', arabic_default)}")
+                st.write(baseline_answer(str(st.session_state.get("rag_query", "")), "ar" if arabic_default else "en"))
+            with comparison_cols[1]:
+                st.markdown(f"#### {bi('مع RAG', 'With RAG', arabic_default)}")
+                st.write(str(result.get("answer", "")))
+
             st.markdown(f"#### {bi('الإجابة', 'Answer', arabic_default)}")
             st.write(str(result.get("answer", "")))
             if result.get("llm_error"):
@@ -2111,6 +2145,16 @@ elif selected_nav == "assistant":
                         )
 
     with right_col:
+        st.markdown(f"### {bi('تدفق RAG', 'RAG Flow', arabic_default)}")
+        st.markdown(
+            "\n".join(
+                [
+                    f"1. {bi('تقسيم سياسات التشغيل إلى مقاطع متداخلة.', 'Chunk policy knowledge into overlapping segments.', arabic_default)}",
+                    f"2. {bi('تمثيل المقاطع متجهياً ثم استرجاع الأعلى صلة.', 'Vectorize chunks and retrieve the most relevant ones.', arabic_default)}",
+                    f"3. {bi('إعادة ترتيب النتائج وتمريرها للإجابة مع المراجع.', 'Re-rank results and answer with citations.', arabic_default)}",
+                ]
+            )
+        )
         st.markdown(f"### {bi('أثر الاسترجاع', 'Retrieval Trace', arabic_default)}")
         result = st.session_state.get("rag_last_result")
         hits = list(result.get("hits", [])) if result else []
